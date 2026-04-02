@@ -518,7 +518,7 @@ app.get('/api/ebay/listings', requireAuth, async (req, res) => {
 // ── Stats ─────────────────────────────────────────────────────────────────────
 app.get('/api/stats', requireAuth, async (req, res) => {
   try {
-    const [counts, locs, recentMoves] = await Promise.all([
+    const [counts, locs, recentMoves, todayScans] = await Promise.all([
       pool.query(`
         SELECT
           COUNT(*) FILTER (WHERE TRUE)                        AS total,
@@ -529,11 +529,13 @@ app.get('/api/stats', requireAuth, async (req, res) => {
       `),
       pool.query('SELECT COUNT(*) AS total FROM locations'),
       pool.query('SELECT * FROM moves ORDER BY moved_at DESC LIMIT 10'),
+      pool.query(`SELECT COUNT(*) AS count FROM moves WHERE moved_at >= CURRENT_DATE`),
     ]);
     res.json({
       items:       counts.rows[0],
       locations:   locs.rows[0],
       recentMoves: recentMoves.rows,
+      todayScans:  parseInt(todayScans.rows[0].count),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

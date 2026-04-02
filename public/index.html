@@ -211,6 +211,10 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <div class="card"><div class="ic cs"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/></svg></div><div class="sl">Stored</div><div class="sv" style="color:var(--success)" id="dash-stored">–</div></div>
     <div class="card"><div class="ic cp"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg></div><div class="sl">Staged / Unlisted</div><div class="sv" style="color:var(--purple)" id="dash-staged">–</div></div>
   </div>
+  <div class="g4" style="margin-bottom:22px">
+    <div class="card"><div class="ic cb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M3 17v2a2 2 0 002 2h2m10-18h2a2 2 0 012 2v2m-4 14h2a2 2 0 002-2v-2M8 12h8M12 8v8"/></svg></div><div class="sl">Today's Scans</div><div class="sv" style="color:var(--brand)" id="dash-today-scans">–</div></div>
+    <div class="card"><div class="ic cs"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div><div class="sl">Items Shipped</div><div class="sv" style="color:var(--success)" id="dash-shipped">–</div></div>
+  </div>
   <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">eBay Integration</div>
   <div class="g2" style="margin-bottom:22px">
     <div class="card" id="ebay-status-card"><div class="loading">Checking eBay…</div></div>
@@ -395,7 +399,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
       <div class="divider"></div>
       <div style="font-size:13px;font-weight:600;margin-bottom:12px">Add Location Bulk</div>
       <div class="fg"><label class="fl">Location names (one per line)</label><textarea class="fi2" id="bulk-locs" rows="4" placeholder="FR01&#10;FR02&#10;AR01&#10;AR02" style="resize:vertical"></textarea></div>
-      <div class="fg"><label class="fl">Type</label><select class="fi2" id="bulk-type"><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>RETURNS</option><option>STAGING</option></select></div>
+      <div class="fg"><label class="fl">Type</label><select class="fi2" id="bulk-type"><option>SHELF_BIN</option><option>UNLISTED_TOTE</option><option>RETURNS_TOTE</option><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>STAGING</option></select></div>
       <button class="btn btn-p" onclick="bulkAddLocations()">Add Locations</button>
       <div class="divider"></div>
       <div style="font-size:13px;font-weight:600;margin-bottom:12px">Export Data</div>
@@ -522,7 +526,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <div class="modal">
     <h2>Add Location</h2>
     <div class="fg"><label class="fl">Name</label><input class="fi2" id="new-loc-name" placeholder="e.g. FR14" autocomplete="off"></div>
-    <div class="fg"><label class="fl">Type</label><select class="fi2" id="new-loc-type"><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>RETURNS</option><option>STAGING</option></select></div>
+    <div class="fg"><label class="fl">Type</label><select class="fi2" id="new-loc-type"><option>SHELF_BIN</option><option>UNLISTED_TOTE</option><option>RETURNS_TOTE</option><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>STAGING</option></select></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-s" onclick="closeModal('modal-add-location')">Cancel</button>
       <button class="btn btn-p" onclick="addLocation()">Add</button>
@@ -705,7 +709,9 @@ async function loadDashboard() {
     document.getElementById('dash-total').textContent  = (+stats.items.total).toLocaleString();
     document.getElementById('dash-stored').textContent = (+stats.items.stored).toLocaleString();
     document.getElementById('dash-staged').textContent = (+stats.items.staged).toLocaleString();
+    document.getElementById('dash-shipped').textContent = (+stats.items.shipped).toLocaleString();
     document.getElementById('dash-locs').textContent   = (+stats.locations.total).toLocaleString();
+    document.getElementById('dash-today-scans').textContent = (stats.todayScans || 0).toLocaleString();
 
     var tb = document.getElementById('moves-log');
     if (!stats.recentMoves.length) {
@@ -1331,17 +1337,30 @@ async function loadInventoryHealth() {
     ]);
 
     // ── Build lookup maps ──────────────────────────────
-    // eBay: sku (uppercase) → listing object
+    // eBay: normalized sku → listing object
+    // Normalize = strip trailing letter suffix (R=Refurb, V=Variant etc)
+    function normalizeSkuKey(sku) {
+      return (sku || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
+    }
+
     var ebayBySku = {};
+    var ebayByRawSku = {};
     ALL_LISTINGS.forEach(function(l) {
-      var key = (l.sku || '').trim().toUpperCase();
-      if (key) ebayBySku[key] = l;
+      var raw = (l.sku || '').trim().toUpperCase();
+      var key = normalizeSkuKey(raw);
+      if (raw) {
+        ebayByRawSku[raw] = l;
+        // Keep the listing with highest qty if multiple normalize to same key
+        if (!ebayBySku[key] || l.qty > (ebayBySku[key].qty || 0)) {
+          ebayBySku[key] = l;
+        }
+      }
     });
 
-    // WMS: serial (uppercase) → array of items (handles duplicates)
+    // WMS: normalized serial → array of items
     var wmsBySku = {};
     storedItems.forEach(function(item) {
-      var key = (item.serial || '').trim().toUpperCase();
+      var key = normalizeSkuKey(item.serial);
       if (!wmsBySku[key]) wmsBySku[key] = [];
       wmsBySku[key].push(item);
     });
