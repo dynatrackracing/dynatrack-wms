@@ -332,7 +332,11 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <div class="phr">
     <div class="ph"><h1>eBay Orders</h1><p id="ebay-orders-status">dynatrack</p></div>
     <div style="display:flex;gap:8px">
-      <label class="btn btn-p" style="cursor:pointer">
+      <button class="btn btn-p" onclick="syncEbayOrders()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Sync Live Orders
+      </button>
+      <label class="btn btn-s" style="cursor:pointer">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
         Import CSV
         <input type="file" accept=".csv" style="display:none" onchange="importOrdersCSV(this)">
@@ -358,11 +362,17 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 <div class="page" id="page-listings">
   <div class="phr">
     <div class="ph"><h1>eBay Listings</h1><p id="listings-sub">dynatrack</p></div>
-    <label class="btn btn-p" style="cursor:pointer">
-      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-      Import CSV
-      <input type="file" accept=".csv" style="display:none" onchange="importListingsCSV(this)">
-    </label>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-p" onclick="syncEbayListings()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Sync Live Listings
+      </button>
+      <label class="btn btn-s" style="cursor:pointer">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        Import CSV
+        <input type="file" accept=".csv" style="display:none" onchange="importListingsCSV(this)">
+      </label>
+    </div>
   </div>
   <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search title or SKU…" oninput="filterListings(this.value)"></div>
   <div class="tabs">
@@ -658,8 +668,8 @@ function navigate(p) {
   if (p === 'locations') loadLocations();
   if (p === 'inventory') loadInventory('');
   if (p === 'labels') loadLabels();
-  if (p === 'ebay') renderOrders();
-  if (p === 'listings') renderListings();
+  if (p === 'ebay') { renderOrders(); if (!ORDERS.length) syncEbayOrders(); }
+  if (p === 'listings') { renderListings(); if (!ALL_LISTINGS.length) syncEbayListings(); }
   if (p === 'health') loadInventoryHealth();
   if (p === 'admin') loadAdmin();
 }
@@ -710,8 +720,13 @@ async function loadDashboard() {
     // Check eBay
     var ebay = await api('/ebay/health');
     document.getElementById('ebay-status-card').innerHTML = ebay.connected
-      ? '<div class="sl" style="margin-bottom:4px">eBay API</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span class="sync-dot"></span><span style="font-size:13px;color:var(--success)">Connected · dynatrack</span></div>'
-      : '<div class="sl" style="margin-bottom:4px">eBay API</div><div style="font-size:12px;color:var(--muted);margin-top:6px">' + ebay.message + '</div>';
+      ? '<div class="sl" style="margin-bottom:6px">eBay Trading API</div>'
+        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">'
+        + '<span class="sync-dot"></span>'
+        + '<span style="font-size:13px;color:var(--success);font-weight:600">Connected · dynatrack</span></div>'
+        + '<button class="btn btn-p" style="font-size:12px;padding:6px 12px" onclick="syncEbayNow()">Sync Live Data Now</button>'
+      : '<div class="sl" style="margin-bottom:6px">eBay Trading API</div>'
+        + '<div style="font-size:12px;color:var(--muted)">' + ebay.message + '</div>';
   } catch(e) { setSyncErr(); showToast('DB error: ' + e.message, true); }
 }
 
@@ -1018,7 +1033,67 @@ async function printLabel() {
 }
 
 // ═══════════════════════════════════════════════════════
-//  EBAY — CSV import (eBay Seller Hub exports)
+//  EBAY LIVE SYNC
+// ═══════════════════════════════════════════════════════
+async function syncEbayNow() {
+  await Promise.all([syncEbayOrders(), syncEbayListings()]);
+}
+
+async function syncEbayOrders() {
+  showToast('Fetching live eBay orders…');
+  setSyncing();
+  try {
+    var r = await api('/ebay/orders?days=90');
+    ORDERS = r.orders.map(function(o) {
+      return {
+        id:     o.id,
+        buyer:  o.buyer,
+        status: o.status === 'Complete' || o.status === 'Completed' ? 'Completed' : o.status,
+        total:  o.total,
+        date:   o.date ? new Date(o.date).toLocaleDateString('en-AU') : '',
+        title:  o.items && o.items[0] ? o.items[0].title : '',
+        sku:    o.items && o.items[0] ? o.items[0].sku   : '',
+        items:  o.items || [],
+      };
+    });
+    renderOrders();
+    setSynced();
+    showToast('Synced ' + ORDERS.length + ' orders from eBay');
+    document.getElementById('ebay-orders-status').textContent =
+      'dynatrack · Live · ' + ORDERS.length + ' orders · Synced ' + new Date().toLocaleTimeString('en-AU');
+  } catch(e) {
+    setSyncErr();
+    showToast('eBay orders sync failed: ' + e.message, true);
+  }
+}
+
+async function syncEbayListings() {
+  showToast('Fetching live eBay listings… this may take a moment');
+  setSyncing();
+  try {
+    var r = await api('/ebay/listings');
+    ALL_LISTINGS = r.listings.map(function(l) {
+      return {
+        sku:   l.sku,
+        title: l.title,
+        price: l.price,
+        qty:   l.qty,
+        url:   l.url || '#',
+      };
+    });
+    renderListings();
+    setSynced();
+    showToast('Synced ' + ALL_LISTINGS.length + ' listings from eBay');
+    document.getElementById('listings-sub').textContent =
+      ALL_LISTINGS.length + ' live listings · dynatrack · Synced ' + new Date().toLocaleTimeString('en-AU');
+  } catch(e) {
+    setSyncErr();
+    showToast('eBay listings sync failed: ' + e.message, true);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  EBAY — CSV import fallback
 // ═══════════════════════════════════════════════════════
 var ORDERS   = [];
 var ALL_LISTINGS = [];

@@ -319,13 +319,200 @@ app.post('/api/print-log', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── eBay ──────────────────────────────────────────────────────────────────────
-app.get('/api/ebay/health', requireAuth, (req, res) => {
-  const configured = !!(process.env.EBAY_APP_ID && process.env.EBAY_TOKEN);
-  res.json({
-    connected: configured,
-    message: configured ? 'eBay API configured' : 'Add EBAY_APP_ID and EBAY_TOKEN env vars to enable live eBay data',
+// ── eBay Trading API ──────────────────────────────────────────────────────────
+const https = require('https');
+
+const EBAY_ENDPOINT = 'https://api.ebay.com/ws/api.dll';
+
+function ebayHeaders(callName) {
+  return {
+    'X-EBAY-API-SITEID':       '0',    // US
+    'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
+    'X-EBAY-API-CALL-NAME':    callName,
+    'X-EBAY-API-APP-NAME':     process.env.TRADING_API_APP_NAME  || '',
+    'X-EBAY-API-CERT-NAME':    process.env.TRADING_API_CERT_NAME || '',
+    'X-EBAY-API-DEV-NAME':     process.env.TRADING_API_DEV_NAME  || '',
+    'Content-Type':            'text/xml',
+  };
+}
+
+function ebayToken() {
+  return process.env.TRADING_API_TOKEN || '';
+}
+
+// Minimal XML → JS parser for eBay responses
+function parseXmlValue(xml, tag) {
+  const m = xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'i'));
+  return m ? m[1].trim() : '';
+}
+function parseXmlAll(xml, tag) {
+  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi');
+  const results = [];
+  let m;
+  while ((m = re.exec(xml)) !== null) results.push(m[1].trim());
+  return results;
+}
+
+async function ebayCall(callName, bodyXml) {
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<${callName}Request xmlns="urn:ebay:apis:eBLBaseComponents">
+  <RequesterCredentials>
+    <eBayAuthToken>${ebayToken()}</eBayAuthToken>
+  </RequesterCredentials>
+  ${bodyXml}
+</${callName}Request>`;
+
+  return new Promise((resolve, reject) => {
+    const url  = new URL(EBAY_ENDPOINT);
+    const opts = {
+      hostname: url.hostname,
+      path:     url.pathname,
+      method:   'POST',
+      headers:  { ...ebayHeaders(callName), 'Content-Length': Buffer.byteLength(xml) },
+    };
+    const req = https.request(opts, res => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.write(xml);
+    req.end();
   });
+}
+
+// Health check — verifies credentials work
+app.get('/api/ebay/health', requireAuth, async (req, res) => {
+  const configured = !!(process.env.TRADING_API_TOKEN && process.env.TRADING_API_APP_NAME);
+  if (!configured) {
+    return res.json({ connected: false, message: 'TRADING_API_* environment variables not set in Railway.' });
+  }
+  try {
+    const xml = await ebayCall('GeteBayOfficialTime', '');
+    const ack = parseXmlValue(xml, 'Ack');
+    if (ack === 'Success' || ack === 'Warning') {
+      res.json({ connected: true, message: 'eBay Trading API connected · Australia site' });
+    } else {
+      const errMsg = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage') || 'Unknown error';
+      res.json({ connected: false, message: 'eBay API error: ' + errMsg });
+    }
+  } catch (e) {
+    res.json({ connected: false, message: 'Connection failed: ' + e.message });
+  }
+});
+
+// Orders — fetches last 90 days, paginates automatically
+app.get('/api/ebay/orders', requireAuth, async (req, res) => {
+  if (!process.env.TRADING_API_TOKEN) {
+    return res.status(503).json({ error: 'eBay API not configured' });
+  }
+  try {
+    const days    = parseInt(req.query.days || '90');
+    const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    let   page    = 1;
+    const orders  = [];
+
+    while (true) {
+      const xml = await ebayCall('GetOrders', `
+        <CreateTimeFrom>${fromDate}</CreateTimeFrom>
+        <CreateTimeTo>${new Date().toISOString()}</CreateTimeTo>
+        <OrderRole>Seller</OrderRole>
+        <OrderStatus>All</OrderStatus>
+        <Pagination>
+          <EntriesPerPage>100</EntriesPerPage>
+          <PageNumber>${page}</PageNumber>
+        </Pagination>
+      `);
+
+      const ack = parseXmlValue(xml, 'Ack');
+      if (ack !== 'Success' && ack !== 'Warning') {
+        const err = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage');
+        throw new Error(err || 'eBay API error');
+      }
+
+      const orderBlocks = parseXmlAll(xml, 'Order');
+      for (const block of orderBlocks) {
+        const transBlocks = parseXmlAll(block, 'Transaction');
+        const items = transBlocks.map(t => ({
+          title:    parseXmlValue(t, 'Title'),
+          sku:      parseXmlValue(t, 'SKU') || parseXmlValue(t, 'SellerSKU'),
+          qty:      parseInt(parseXmlValue(t, 'QuantityPurchased') || '1'),
+          price:    parseFloat(parseXmlValue(t, 'TransactionPrice') || '0'),
+        }));
+        orders.push({
+          id:       parseXmlValue(block, 'OrderID'),
+          status:   parseXmlValue(block, 'OrderStatus'),
+          buyer:    parseXmlValue(block, 'UserID') || parseXmlValue(block, 'BuyerUserID'),
+          total:    parseFloat(parseXmlValue(block, 'Total') || '0'),
+          date:     parseXmlValue(block, 'CreatedTime'),
+          items,
+        });
+      }
+
+      const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
+      if (page >= totalPages) break;
+      page++;
+    }
+
+    res.json({ orders, count: orders.length, fetched: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Listings — fetches active listings with SKU and quantity
+app.get('/api/ebay/listings', requireAuth, async (req, res) => {
+  if (!process.env.TRADING_API_TOKEN) {
+    return res.status(503).json({ error: 'eBay API not configured' });
+  }
+  try {
+    let   page    = 1;
+    const listings = [];
+
+    while (true) {
+      const xml = await ebayCall('GetMyeBaySelling', `
+        <ActiveList>
+          <Include>true</Include>
+          <IncludeNotes>false</IncludeNotes>
+          <Pagination>
+            <EntriesPerPage>200</EntriesPerPage>
+            <PageNumber>${page}</PageNumber>
+          </Pagination>
+        </ActiveList>
+        <HideVariations>false</HideVariations>
+      `);
+
+      const ack = parseXmlValue(xml, 'Ack');
+      if (ack !== 'Success' && ack !== 'Warning') {
+        const err = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage');
+        throw new Error(err || 'eBay API error');
+      }
+
+      const itemBlocks = parseXmlAll(xml, 'ItemID').length
+        ? parseXmlAll(xml, 'Item')
+        : [];
+
+      for (const block of itemBlocks) {
+        listings.push({
+          itemId:  parseXmlValue(block, 'ItemID'),
+          sku:     parseXmlValue(block, 'SKU') || parseXmlValue(block, 'SellerSKU'),
+          title:   parseXmlValue(block, 'Title'),
+          price:   parseFloat(parseXmlValue(block, 'CurrentPrice') || parseXmlValue(block, 'StartPrice') || '0'),
+          qty:     parseInt(parseXmlValue(block, 'QuantityAvailable') || parseXmlValue(block, 'Quantity') || '0'),
+          url:     parseXmlValue(block, 'ViewItemURL'),
+        });
+      }
+
+      const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
+      if (page >= totalPages || itemBlocks.length === 0) break;
+      page++;
+      if (page > 50) break; // safety cap — 10,000 listings max
+    }
+
+    res.json({ listings, count: listings.length, fetched: new Date().toISOString() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
