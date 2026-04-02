@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>HawkerWMS — dynatrack</title>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F2EFE9;
+  --bg2:#FFFFFF;
+  --bg3:#EAE6DF;
+  --card:#FFFFFF;
+  --border:#E0DBD2;
+  --bh:#C8C2B6;
+  --text:#1A2332;
+  --text2:#4A5A6B;
+  --muted:#8F9EB0;
+  --brand:#1D4ED8;
+  --brand-d:rgba(29,78,216,.08);
+  --brand-m:rgba(29,78,216,.15);
+  --success:#15803D;
+  --success-d:rgba(21,128,61,.1);
+  --warn:#B45309;
+  --warn-d:rgba(180,83,9,.1);
+  --err:#B91C1C;
+  --err-d:rgba(185,28,28,.1);
+  --purple:#6D28D9;
+  --purple-d:rgba(109,40,217,.1);
+  --shadow:0 1px 4px rgba(26,35,50,.08),0 4px 16px rgba(26,35,50,.06);
+  --shadow-sm:0 1px 3px rgba(26,35,50,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+nav{position:fixed;top:0;left:0;right:0;height:64px;background:var(--bg2);border-bottom:1px solid var(--border);z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 24px;box-shadow:var(--shadow-sm)}
+.logo{width:36px;height:36px;border-radius:9px;background:var(--brand);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(29,78,216,.3)}
+.nav-l{display:flex;align-items:center;gap:13px}
+.nav-title{font-size:17px;font-weight:700;color:var(--text);letter-spacing:-.02em}
+.nav-r{display:flex;align-items:center;gap:12px}
+.avatar{width:34px;height:34px;border-radius:50%;background:var(--brand-m);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;border:2px solid var(--border)}
+.sync-dot{width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;flex-shrink:0}
+.sync-dot.busy{background:var(--warn);animation:pulse 1s infinite}
+.sync-dot.err{background:var(--err)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+aside{position:fixed;top:64px;left:0;bottom:0;width:230px;background:var(--bg2);border-right:1px solid var(--border);z-index:90;overflow-y:auto;padding:16px 10px}
+.nl{font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:12px 10px 5px}
+.ni{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;font-size:14px;font-weight:500;color:var(--text2);cursor:pointer;transition:all .15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left;letter-spacing:-.01em;font-family:'Plus Jakarta Sans',sans-serif}
+.ni:hover{background:var(--bg3);color:var(--text)}
+.ni.active{background:var(--brand-d);color:var(--brand);font-weight:600}
+.ni svg{width:17px;height:17px;flex-shrink:0}
+main{margin-left:230px;padding-top:64px;min-height:100vh}
+.page{display:none;padding:32px;animation:fi .2s ease}
+.page.active{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.ph{margin-bottom:26px}.ph h1{font-size:26px;font-weight:700;letter-spacing:-.025em;color:var(--text)}.ph p{font-size:14px;color:var(--text2);margin-top:3px}
+.phr{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:26px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;transition:box-shadow .2s,border-color .2s;box-shadow:var(--shadow-sm)}
+.card:hover{box-shadow:var(--shadow);border-color:var(--bh)}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:700px){.g4,.g2{grid-template-columns:1fr}main{margin-left:0}aside{display:none}}
+.sv{font-size:32px;font-weight:700;font-family:'Fira Code',monospace;letter-spacing:-.02em;margin-top:4px}
+.sl{font-size:13px;color:var(--text2);font-weight:500}.ss{font-size:12px;color:var(--muted);margin-top:3px}
+.ic{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
+.ic svg{width:21px;height:21px}
+.cb{background:var(--brand-d);color:var(--brand)}.cs{background:var(--success-d);color:var(--success)}
+.cp{background:var(--purple-d);color:var(--purple)}.cw{background:var(--warn-d);color:var(--warn)}
+.sb{display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:11px;padding:11px 16px;margin-bottom:20px;transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
+.sb:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-d)}
+.sb svg{width:17px;height:17px;color:var(--muted);flex-shrink:0}
+.sb input{background:none;border:none;outline:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;color:var(--text);width:100%}
+.sb input::placeholder{color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;border:none;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s;letter-spacing:-.01em}
+.btn:hover{filter:brightness(.95)}.btn:active{filter:brightness(.9)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-p{background:var(--brand);color:white;box-shadow:0 1px 4px rgba(29,78,216,.25)}
+.btn-s{background:var(--bg2);color:var(--text);border:1.5px solid var(--border);box-shadow:var(--shadow-sm)}
+.btn-danger{background:var(--err-d);color:var(--err);border:1px solid rgba(185,28,28,.2)}
+.btn svg{width:15px;height:15px}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-bottom:1.5px solid var(--border);background:var(--bg)}
+td{padding:12px 14px;border-bottom:1px solid var(--border);color:var(--text2);font-size:14px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+.mono{font-family:'Fira Code',monospace;font-size:12.5px}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:600;letter-spacing:.02em}
+.bg-s{background:var(--success-d);color:var(--success)}.bg-w{background:var(--warn-d);color:var(--warn)}
+.bg-b{background:var(--brand-d);color:var(--brand)}.bg-p{background:var(--purple-d);color:var(--purple)}
+.bg-e{background:var(--err-d);color:var(--err)}.bg-m{background:var(--bg3);color:var(--text2)}
+.divider{height:1px;background:var(--border);margin:24px 0}
+.tabs{display:flex;gap:3px;background:var(--bg3);border-radius:11px;padding:4px;margin-bottom:20px;width:fit-content;flex-wrap:wrap;border:1px solid var(--border)}
+.tab{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;color:var(--text2);transition:all .15s;border:none;background:none;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-.01em}
+.tab.active{background:var(--card);color:var(--brand);box-shadow:var(--shadow-sm);font-weight:600;border:1px solid var(--border)}
+.lg{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:9px}
+.lc{background:var(--card);border:1.5px solid var(--border);border-radius:10px;padding:12px;text-align:center;cursor:pointer;transition:all .2s;box-shadow:var(--shadow-sm)}
+.lc:hover{border-color:var(--brand);background:var(--brand-d);box-shadow:var(--shadow)}
+.lc.occ{border-color:rgba(21,128,61,.4);background:var(--success-d)}
+.lc .lid{font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--text)}
+.lc .lct{font-size:11px;color:var(--muted);margin-top:3px}
+.scan-box{background:var(--card);border:2px dashed var(--border);border-radius:16px;padding:44px 32px;text-align:center;margin-bottom:20px;transition:all .2s;box-shadow:var(--shadow-sm)}
+.scan-box:focus-within{border-color:var(--brand);border-style:solid;box-shadow:0 0 0 4px var(--brand-d)}
+.scan-box input{background:var(--bg);border:1.5px solid var(--border);border-radius:11px;padding:14px 20px;font-size:16px;font-family:'Fira Code',monospace;color:var(--text);outline:none;width:100%;max-width:340px;text-align:center;transition:all .2s}
+.scan-box input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-d)}
+.fg{margin-bottom:16px}
+.fl{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:.06em}
+.fi2{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;font-size:14px;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;outline:none;transition:all .2s}
+.fi2:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-d)}
+select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238F9EB0' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px}
+.modal-bg{position:fixed;inset:0;background:rgba(26,35,50,.4);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;min-width:360px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(26,35,50,.15)}
+.modal h2{font-size:18px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em}
+#toast{position:fixed;bottom:24px;right:24px;background:var(--text);border-radius:11px;padding:12px 18px;font-size:14px;color:white;box-shadow:0 8px 32px rgba(26,35,50,.2);transform:translateY(90px);opacity:0;transition:all .25s ease;z-index:999;display:flex;align-items:center;gap:10px}
+#toast.show{transform:translateY(0);opacity:1}
+.lp{background:white;color:#111;border-radius:10px;padding:20px;width:268px;font-family:'Fira Code',monospace;box-shadow:var(--shadow)}
+.lp-sku{font-size:17px;font-weight:600;margin-bottom:3px}
+.lp-bc{font-size:38px;letter-spacing:5px;line-height:1;margin:10px 0}
+.lp-d{font-size:11px;color:#555;margin-top:5px}
+.result-card{background:var(--card);border:2px solid var(--brand);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 0 0 4px var(--brand-d)}
+.loading{color:var(--muted);font-size:14px;padding:24px;text-align:center}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--bh);border-radius:4px}
+</style>
+</head>
+<body>
+
+<!-- ═══════ LOGIN SCREEN ═══════ -->
+<div id="login-screen" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:9999;align-items:center;justify-content:center;flex-direction:column">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:20px;padding:40px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(26,35,50,.12)">
+    <div style="text-align:center;margin-bottom:32px">
+      <div style="width:56px;height:56px;border-radius:14px;background:var(--brand);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;box-shadow:0 4px 16px rgba(29,78,216,.3)">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M12 2C11 2 10 2.5 9.5 3.5L8 6H5L3 8L7 7.5L6 10L9 9C9.5 10.5 10.5 11.5 12 12C13.5 11.5 14.5 10.5 15 9L18 10L17 7.5L21 8L19 6H16L14.5 3.5C14 2.5 13 2 12 2Z"/><path d="M9.5 13C7.5 14 5 15 3 18C5.5 16.5 8 16.5 10 17.5C10.5 15.5 10.5 14 9.5 13Z"/><path d="M14.5 13C16.5 14 19 15 21 18C18.5 16.5 16 16.5 14 17.5C13.5 15.5 13.5 14 14.5 13Z"/><path d="M10.5 17.5C11 19.5 11.5 21 12 22C12.5 21 13 19.5 13.5 17.5C13 17.8 12.5 18 12 18C11.5 18 11 17.8 10.5 17.5Z"/><circle cx="12" cy="8" r="1.5"/></svg>
+      </div>
+      <div style="font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.03em">HawkerWMS</div>
+      <div style="font-size:14px;color:var(--muted);margin-top:4px">Sign in to your warehouse</div>
+    </div>
+    <div style="margin-bottom:16px">
+      <label style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Username</label>
+      <input id="login-user" class="fi2" type="text" placeholder="admin" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div style="margin-bottom:24px">
+      <label style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Password</label>
+      <input id="login-pass" class="fi2" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="login-err" style="display:none;background:var(--err-d);color:var(--err);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:16px;text-align:center"></div>
+    <button onclick="doLogin()" class="btn btn-p" style="width:100%;justify-content:center;padding:12px;font-size:15px;font-weight:600" id="login-btn">
+      Sign In
+    </button>
+  </div>
+</div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-l">
+    <div class="logo">
+      <!-- Hawk in flight logo -->
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C11 2 10 2.5 9.5 3.5L8 6H5L3 8L7 7.5L6 10L9 9C9.5 10.5 10.5 11.5 12 12C13.5 11.5 14.5 10.5 15 9L18 10L17 7.5L21 8L19 6H16L14.5 3.5C14 2.5 13 2 12 2Z"/>
+        <path d="M9.5 13C7.5 14 5 15 3 18C5.5 16.5 8 16.5 10 17.5C10.5 15.5 10.5 14 9.5 13Z"/>
+        <path d="M14.5 13C16.5 14 19 15 21 18C18.5 16.5 16 16.5 14 17.5C13.5 15.5 13.5 14 14.5 13Z"/>
+        <path d="M10.5 17.5C11 19.5 11.5 21 12 22C12.5 21 13 19.5 13.5 17.5C13 17.8 12.5 18 12 18C11.5 18 11 17.8 10.5 17.5Z"/>
+        <circle cx="12" cy="8" r="1.5"/>
+      </svg>
+    </div>
+    <span class="nav-title">HawkerWMS</span>
+  </div>
+  <div class="nav-r" style="display:flex;align-items:center;gap:8px">
+    <span class="sync-dot" id="sync-dot"></span>
+    <span style="font-size:12px;color:var(--text2)" id="sync-status">Connecting…</span>
+    <div class="avatar" style="margin-left:8px">D</div>
+    <span style="font-size:14px;font-weight:500;color:var(--text2)" id="nav-username">dynatrack</span>
+    <button class="btn btn-s" style="padding:6px 12px;font-size:12px" onclick="doLogout()">Sign out</button>
+  </div>
+</nav>
+
+<!-- SIDEBAR -->
+<aside>
+  <div class="nl">Main</div>
+  <button class="ni active" data-page="dashboard"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Dashboard</button>
+  <button class="ni" data-page="scan"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M3 17v2a2 2 0 002 2h2m10-18h2a2 2 0 012 2v2m-4 14h2a2 2 0 002-2v-2M8 12h8M12 8v8"/></svg>Scan &amp; Move</button>
+  <button class="ni" data-page="locations"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2C8.686 2 6 4.686 6 8c0 5.25 6 12 6 12s6-6.75 6-12c0-3.314-2.686-6-6-6z"/><circle cx="12" cy="8" r="2"/></svg>Locations</button>
+  <button class="ni" data-page="inventory"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0v10l-8 4m0-14L4 7m8 4v10"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 9.5l-4 2-4-2"/></svg>Inventory</button>
+  <button class="ni" data-page="labels"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>Labels</button>
+  <div class="nl">eBay</div>
+  <button class="ni" data-page="ebay"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5m12-5l2 5M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"/></svg>Orders</button>
+  <button class="ni" data-page="listings"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6M9 16h4"/></svg>Listings</button>
+  <button class="ni" data-page="health"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Inventory Health</button>
+  <div class="nl">System</div>
+  <button class="ni" data-page="admin"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Admin</button>
+</aside>
+
+<main>
+
+<!-- ═══════ DASHBOARD ═══════ -->
+<div class="page active" id="page-dashboard">
+  <div class="phr">
+    <div class="ph"><h1>Dashboard</h1><p>Live warehouse data · dynatrack</p></div>
+    <button class="btn btn-s" onclick="loadDashboard()">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      Refresh
+    </button>
+  </div>
+  <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" id="dash-search" placeholder="Search serial, SKU, or location…" oninput="dashSearch(this.value)"></div>
+  <div id="dash-results" style="margin-bottom:16px"></div>
+  <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">Warehouse Overview</div>
+  <div class="g4" style="margin-bottom:22px">
+    <div class="card"><div class="ic cw"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></div><div class="sl">Items Tracked</div><div class="sv" style="color:var(--warn)" id="dash-total">–</div></div>
+    <div class="card"><div class="ic cs"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/></svg></div><div class="sl">Locations</div><div class="sv" style="color:var(--success)" id="dash-locs">–</div></div>
+    <div class="card"><div class="ic cs"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/></svg></div><div class="sl">Stored</div><div class="sv" style="color:var(--success)" id="dash-stored">–</div></div>
+    <div class="card"><div class="ic cp"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg></div><div class="sl">Staged / Unlisted</div><div class="sv" style="color:var(--purple)" id="dash-staged">–</div></div>
+  </div>
+  <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">eBay Integration</div>
+  <div class="g2" style="margin-bottom:22px">
+    <div class="card" id="ebay-status-card"><div class="loading">Checking eBay…</div></div>
+    <div class="card"><div class="sl" style="margin-bottom:8px">Quick Import</div><p style="font-size:12px;color:var(--muted);margin-bottom:12px">Import eBay data from a CSV export from Seller Hub.</p><button class="btn btn-s" onclick="navigate('ebay')">Go to Orders →</button></div>
+  </div>
+  <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">Recent Moves</div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Serial</th><th>From</th><th>To</th><th>By</th><th>Time</th></tr></thead><tbody id="moves-log"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody></table></div></div>
+</div>
+
+<!-- ═══════ SCAN & MOVE ═══════ -->
+<div class="page" id="page-scan">
+  <div class="ph"><h1>Scan &amp; Move</h1><p>Works with USB &amp; Bluetooth barcode scanners</p></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:820px">
+    <div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">1 · Scan Item</div>
+      <div class="scan-box">
+        <svg style="width:52px;height:52px;margin:0 auto 14px;opacity:.25;display:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/></svg>
+        <input type="text" id="scan-in" placeholder="Scan or type barcode…" autofocus autocomplete="off">
+        <p style="font-size:11px;color:var(--muted);margin-top:10px">Scanner auto-submits · or press Enter</p>
+      </div>
+      <div id="scan-result" style="display:none" class="result-card">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Scanned Item</div>
+        <div id="scan-serial" class="mono" style="font-size:17px;font-weight:600;color:var(--text)"></div>
+        <div style="display:flex;gap:14px;margin-top:10px">
+          <div><div style="font-size:10px;color:var(--muted)">Current Location</div><div id="scan-curloc" class="mono" style="font-size:12px;color:var(--text2)">–</div></div>
+          <div><div style="font-size:10px;color:var(--muted)">Status</div><div id="scan-status"></div></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">2 · Select Destination</div>
+      <div class="fg">
+        <label class="fl">Filter locations</label>
+        <input class="fi2" id="loc-filter" placeholder="e.g. FR14, AR01…" oninput="filterLocs(this.value)" autocomplete="off">
+        <div id="loc-dropdown" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;margin-top:4px"></div>
+      </div>
+      <div class="fg"><label class="fl">Selected</label><div id="selected-loc" style="font-family:'DM Mono',monospace;font-size:14px;color:var(--brand);padding:4px 0">–</div></div>
+      <button class="btn btn-p" style="width:100%;justify-content:center;padding:12px;font-size:14px" id="move-btn" onclick="doMove()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+        Move Item
+      </button>
+      <button class="btn btn-s" style="width:100%;justify-content:center;margin-top:8px" onclick="resetScan()">Reset</button>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div style="font-size:13px;font-weight:600;margin-bottom:12px">Recent Moves</div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Serial</th><th>From</th><th>To</th><th>Time</th></tr></thead><tbody id="move-history"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody></table></div></div>
+</div>
+
+<!-- ═══════ LOCATIONS ═══════ -->
+<div class="page" id="page-locations">
+  <div class="phr">
+    <div class="ph"><h1>Locations</h1><p id="loc-count-label">Loading…</p></div>
+    <button class="btn btn-p" onclick="openAddLocation()">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+      Add Location
+    </button>
+  </div>
+  <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search location…" oninput="filterLocGrid(this.value)"></div>
+  <div class="tabs" id="zone-tabs"></div>
+  <div class="lg" id="loc-grid"><div class="loading">Loading locations…</div></div>
+</div>
+
+<!-- ═══════ INVENTORY ═══════ -->
+<div class="page" id="page-inventory">
+  <div class="phr">
+    <div class="ph"><h1>Inventory</h1><p id="inv-count">Loading…</p></div>
+    <button class="btn btn-p" onclick="openAddItem()">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+      Add Item
+    </button>
+  </div>
+  <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search serial, location…" oninput="filterInv(this.value)"></div>
+  <div class="tabs">
+    <button class="tab active" onclick="filterInvStatus('',this)">All</button>
+    <button class="tab" onclick="filterInvStatus('STORED',this)">Stored</button>
+    <button class="tab" onclick="filterInvStatus('STAGED_UNLISTED',this)">Staged</button>
+    <button class="tab" onclick="filterInvStatus('SHIPPED',this)">Shipped</button>
+  </div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Serial ID</th><th>Status</th><th>Location</th><th>Notes</th><th>Updated</th></tr></thead><tbody id="inv-table"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody></table></div></div>
+</div>
+
+<!-- ═══════ LABELS ═══════ -->
+<div class="page" id="page-labels">
+  <div class="ph"><h1>Labels</h1><p>Auto-numbered barcode labels</p></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;max-width:720px">
+    <div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px">Generator</div>
+      <div class="fg"><label class="fl">Type</label><select class="fi2" id="lbl-type" onchange="updateLabel()"><option value="serial">Serial Number</option><option value="sku">SKU / Part Number</option><option value="location">Location Label</option></select></div>
+      <div class="fg"><label class="fl">Prefix (auto-number)</label><select class="fi2" id="lbl-prefix" onchange="autoSerial()"><option value="">– manual entry –</option></select></div>
+      <div class="fg"><label class="fl">Value</label><input class="fi2" id="lbl-val" placeholder="e.g. INT-4763" oninput="updateLabel()"></div>
+      <div class="fg"><label class="fl">Description</label><input class="fi2" id="lbl-desc" placeholder="Part description" oninput="updateLabel()"></div>
+      <div class="fg"><label class="fl">Quantity</label><input class="fi2" type="number" id="lbl-qty" value="1" min="1" max="100"></div>
+      <button class="btn btn-p" style="width:100%;justify-content:center;padding:12px" onclick="printLabel()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        Print Label
+      </button>
+    </div>
+    <div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:14px">Preview</div>
+      <div class="lp">
+        <div style="font-size:9px;color:#888;margin-bottom:5px">WAREHOUSE WMS · DYNATRACK</div>
+        <div class="lp-sku" id="lp-val">–</div>
+        <div class="lp-bc" id="lp-bc">||| || | ||</div>
+        <div class="lp-d" id="lp-desc">Part description</div>
+        <div style="margin-top:8px;font-size:9px;color:#888" id="lp-date"></div>
+      </div>
+      <div style="margin-top:14px;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Live Sequences</div>
+      <div id="seq-display"></div>
+    </div>
+  </div>
+  <div class="divider"></div>
+  <div style="font-size:13px;font-weight:600;margin-bottom:12px">Print History</div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Value</th><th>Type</th><th>Qty</th><th>Time</th></tr></thead><tbody id="print-history"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody></table></div></div>
+</div>
+
+<!-- ═══════ EBAY ORDERS ═══════ -->
+<div class="page" id="page-ebay">
+  <div class="phr">
+    <div class="ph"><h1>eBay Orders</h1><p id="ebay-orders-status">dynatrack</p></div>
+    <div style="display:flex;gap:8px">
+      <label class="btn btn-p" style="cursor:pointer">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        Import CSV
+        <input type="file" accept=".csv" style="display:none" onchange="importOrdersCSV(this)">
+      </label>
+    </div>
+  </div>
+  <div class="g4" style="margin-bottom:20px">
+    <div class="card"><div class="sl">Total Orders</div><div class="sv" style="color:var(--brand)" id="eo-total">–</div></div>
+    <div class="card"><div class="sl">Completed</div><div class="sv" style="color:var(--success)" id="eo-completed">–</div></div>
+    <div class="card"><div class="sl">Cancelled</div><div class="sv" style="color:var(--err)" id="eo-cancelled">–</div></div>
+    <div class="card"><div class="sl">Total Revenue</div><div class="sv" style="color:var(--warn)" id="eo-rev">–</div></div>
+  </div>
+  <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search order ID, buyer, SKU…" oninput="filterOrders(this.value)"></div>
+  <div class="tabs">
+    <button class="tab active" onclick="filterOrderStatus('all',this)">All</button>
+    <button class="tab" onclick="filterOrderStatus('Completed',this)">Completed</button>
+    <button class="tab" onclick="filterOrderStatus('Cancelled',this)">Cancelled</button>
+  </div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Order ID</th><th>Buyer</th><th>Item</th><th>SKU</th><th>Total</th><th>Date</th><th>Status</th></tr></thead><tbody id="orders-table"><tr><td colspan="7" class="loading">No orders yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
+</div>
+
+<!-- ═══════ LISTINGS ═══════ -->
+<div class="page" id="page-listings">
+  <div class="phr">
+    <div class="ph"><h1>eBay Listings</h1><p id="listings-sub">dynatrack</p></div>
+    <label class="btn btn-p" style="cursor:pointer">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+      Import CSV
+      <input type="file" accept=".csv" style="display:none" onchange="importListingsCSV(this)">
+    </label>
+  </div>
+  <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search title or SKU…" oninput="filterListings(this.value)"></div>
+  <div class="tabs">
+    <button class="tab active" onclick="filterListingStock('all',this)">All</button>
+    <button class="tab" onclick="filterListingStock('stock',this)">In Stock</button>
+    <button class="tab" onclick="filterListingStock('zero',this)">No Stock</button>
+  </div>
+  <div class="card"><div class="tw"><table><thead><tr><th>SKU</th><th>Title</th><th>Price</th><th>Qty</th><th>Link</th></tr></thead><tbody id="listings-table"><tr><td colspan="5" class="loading">No listings yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
+  <div style="margin-top:12px;font-size:12px;color:var(--muted);text-align:center" id="listings-showing"></div>
+</div>
+
+<!-- ═══════ ADMIN ═══════ -->
+<div class="page" id="page-admin">
+  <div class="ph"><h1>Admin</h1><p>Settings and data management</p></div>
+  <div class="g2" style="max-width:900px">
+    <div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">Serial Sequences</div>
+      <div id="seq-admin"><div class="loading">Loading…</div></div>
+      <button class="btn btn-s" style="margin-top:10px" onclick="openAddSeq()">+ Add Prefix</button>
+      <div class="divider"></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">Add Location Bulk</div>
+      <div class="fg"><label class="fl">Location names (one per line)</label><textarea class="fi2" id="bulk-locs" rows="4" placeholder="FR01&#10;FR02&#10;AR01&#10;AR02" style="resize:vertical"></textarea></div>
+      <div class="fg"><label class="fl">Type</label><select class="fi2" id="bulk-type"><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>RETURNS</option><option>STAGING</option></select></div>
+      <button class="btn btn-p" onclick="bulkAddLocations()">Add Locations</button>
+      <div class="divider"></div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">Export Data</div>
+      <button class="btn btn-s" style="width:100%;justify-content:center;margin-bottom:8px" onclick="exportCSV('items')">Export Items CSV</button>
+      <button class="btn btn-s" style="width:100%;justify-content:center;margin-bottom:8px" onclick="exportCSV('locations')">Export Locations CSV</button>
+      <button class="btn btn-s" style="width:100%;justify-content:center" onclick="exportCSV('moves')">Export Moves CSV</button>
+    </div>
+    <div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">Database Status</div>
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:grid;gap:10px">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text2);font-size:13px">Database</span><span class="mono" id="admin-db-status" style="color:var(--muted)">Checking…</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text2);font-size:13px">Locations</span><span class="mono" id="admin-locs">–</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text2);font-size:13px">Items</span><span class="mono" id="admin-items">–</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text2);font-size:13px">Total Moves</span><span class="mono" id="admin-moves">–</span></div>
+        </div>
+      </div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">eBay API</div>
+      <div class="card" style="margin-bottom:16px" id="admin-ebay-card">
+        <div style="font-size:12px;color:var(--muted)">Add <code style="color:var(--brand)">EBAY_APP_ID</code> and <code style="color:var(--brand)">EBAY_TOKEN</code> to Railway environment variables to enable live eBay sync.</div>
+      </div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">Account</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--brand-d);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600">D</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">dynatrack</div><div style="font-size:11px;color:var(--muted)">Administrator</div></div>
+        <span class="badge bg-b">Admin</span>
+      </div>
+    </div>
+  </div>
+<!-- ═══════ INVENTORY HEALTH ═══════ -->
+<div class="page" id="page-health">
+  <div class="phr">
+    <div class="ph">
+      <h1>Inventory Health</h1>
+      <p id="health-sync-label">eBay listings vs WMS active shelf inventory</p>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-s" onclick="loadInventoryHealth()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Sync Now
+      </button>
+      <button class="btn btn-s" onclick="exportHealthCSV()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Export CSV
+      </button>
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px" id="health-cards">
+    <div class="card" style="border-left:3px solid var(--success)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">Matched</div><div class="sv" style="color:var(--success)" id="h-matched">–</div></div>
+        <div style="font-size:22px">✓</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--warn)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">eBay Only</div><div class="sv" style="color:var(--warn)" id="h-ebay-only">–</div></div>
+        <div style="font-size:22px">⚠</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--warn)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">WMS Only</div><div class="sv" style="color:var(--warn)" id="h-wms-only">–</div></div>
+        <div style="font-size:22px">⚠</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--err)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">Duplicate</div><div class="sv" style="color:var(--err)" id="h-duplicate">–</div></div>
+        <div style="font-size:22px">🚨</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--brand)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">Staging</div><div class="sv" style="color:var(--brand)" id="h-staging">–</div></div>
+        <div style="font-size:22px">📦</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="health-summary" style="font-size:13px;color:var(--text2);margin-bottom:18px;padding:12px 16px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)">
+    Run a sync to compare your eBay listings against WMS shelf inventory. Import eBay listings CSV first if you haven't already.
+  </div>
+
+  <div class="sb">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg>
+    <input type="text" placeholder="Search by SKU, title, serial, or location…" oninput="filterHealth(this.value)">
+  </div>
+
+  <div class="tabs" id="health-tabs">
+    <button class="tab active" onclick="filterHealthStatus('all',this)">All</button>
+    <button class="tab" onclick="filterHealthStatus('Matched',this)">Matched</button>
+    <button class="tab" onclick="filterHealthStatus('eBay Only',this)">eBay Only</button>
+    <button class="tab" onclick="filterHealthStatus('WMS Only',this)">WMS Only</button>
+    <button class="tab" onclick="filterHealthStatus('Duplicate',this)">Duplicate</button>
+  </div>
+
+  <div class="card" style="padding:0">
+    <div class="tw">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:130px">SKU</th>
+            <th style="width:130px">Status</th>
+            <th>eBay</th>
+            <th style="width:200px">WMS</th>
+          </tr>
+        </thead>
+        <tbody id="health-table">
+          <tr><td colspan="4" class="loading">Run a sync to see results</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div style="margin-top:10px;font-size:12px;color:var(--muted);text-align:center" id="health-showing"></div>
+</div>
+
+</main>
+
+<!-- ═══════ MODALS ═══════ -->
+<div class="modal-bg" id="modal-add-location">
+  <div class="modal">
+    <h2>Add Location</h2>
+    <div class="fg"><label class="fl">Name</label><input class="fi2" id="new-loc-name" placeholder="e.g. FR14" autocomplete="off"></div>
+    <div class="fg"><label class="fl">Type</label><select class="fi2" id="new-loc-type"><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>RETURNS</option><option>STAGING</option></select></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-s" onclick="closeModal('modal-add-location')">Cancel</button>
+      <button class="btn btn-p" onclick="addLocation()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-add-item">
+  <div class="modal">
+    <h2>Add Item</h2>
+    <div class="fg"><label class="fl">Serial / Barcode</label><input class="fi2" id="new-item-serial" placeholder="e.g. INT-4763" autocomplete="off"></div>
+    <div class="fg"><label class="fl">Status</label><select class="fi2" id="new-item-status"><option value="STAGED_UNLISTED">STAGED_UNLISTED</option><option value="STORED">STORED</option><option value="SHIPPED">SHIPPED</option></select></div>
+    <div class="fg"><label class="fl">Location (optional)</label><input class="fi2" id="new-item-location" placeholder="e.g. FR14"></div>
+    <div class="fg"><label class="fl">Notes</label><input class="fi2" id="new-item-notes" placeholder="Optional notes"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-s" onclick="closeModal('modal-add-item')">Cancel</button>
+      <button class="btn btn-p" onclick="addItem()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-add-seq">
+  <div class="modal">
+    <h2>Add Sequence Prefix</h2>
+    <div class="fg"><label class="fl">Prefix</label><input class="fi2" id="new-seq-prefix" placeholder="e.g. INT" autocomplete="off" style="text-transform:uppercase"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-s" onclick="closeModal('modal-add-seq')">Cancel</button>
+      <button class="btn btn-p" onclick="addSeq()">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast">
+  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════════════════
+var WMS_TOKEN = localStorage.getItem('wms_token') || '';
+var WMS_USER  = localStorage.getItem('wms_user')  || '';
+
+function showLogin() {
+  var ls = document.getElementById('login-screen');
+  ls.style.display = 'flex';
+  setTimeout(function(){ document.getElementById('login-user').focus(); }, 100);
+}
+function hideLogin() {
+  document.getElementById('login-screen').style.display = 'none';
+}
+
+async function doLogin() {
+  var btn  = document.getElementById('login-btn');
+  var err  = document.getElementById('login-err');
+  var user = document.getElementById('login-user').value.trim();
+  var pass = document.getElementById('login-pass').value;
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  try {
+    var r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass }),
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Login failed');
+    WMS_TOKEN = data.token;
+    WMS_USER  = data.username;
+    localStorage.setItem('wms_token', WMS_TOKEN);
+    localStorage.setItem('wms_user',  WMS_USER);
+    document.getElementById('nav-username').textContent = WMS_USER;
+    hideLogin();
+    loadDashboard();
+  } catch(e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Sign In';
+}
+
+async function doLogout() {
+  try { await fetch('/api/logout', { method:'POST', headers:{'x-wms-token':WMS_TOKEN} }); } catch(e){}
+  WMS_TOKEN = '';
+  WMS_USER  = '';
+  localStorage.removeItem('wms_token');
+  localStorage.removeItem('wms_user');
+  showLogin();
+}
+
+// ═══════════════════════════════════════════════════════
+//  API HELPER — calls our own Express backend
+// ═══════════════════════════════════════════════════════
+async function api(path, opts) {
+  opts = opts || {};
+  const r = await fetch('/api' + path, {
+    headers: { 'Content-Type': 'application/json', 'x-wms-token': WMS_TOKEN, ...(opts.headers || {}) },
+    method: opts.method || 'GET',
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (r.status === 401) { showLogin(); throw new Error('Session expired — please log in again'); }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(err.error || r.statusText);
+  }
+  return r.json();
+}
+
+// ═══════════════════════════════════════════════════════
+//  SYNC STATUS
+// ═══════════════════════════════════════════════════════
+function setSyncing() {
+  document.getElementById('sync-dot').className = 'sync-dot busy';
+  document.getElementById('sync-status').textContent = 'Syncing…';
+}
+function setSynced() {
+  document.getElementById('sync-dot').className = 'sync-dot';
+  document.getElementById('sync-status').textContent = 'Live';
+}
+function setSyncErr() {
+  document.getElementById('sync-dot').className = 'sync-dot err';
+  document.getElementById('sync-status').textContent = 'DB Error';
+}
+
+// ═══════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════
+document.querySelectorAll('[data-page]').forEach(function(el) {
+  el.addEventListener('click', function() { navigate(el.dataset.page); });
+});
+function navigate(p) {
+  document.querySelectorAll('.page').forEach(function(pg) { pg.classList.remove('active'); });
+  document.querySelectorAll('.ni').forEach(function(n) { n.classList.remove('active'); });
+  var pg = document.getElementById('page-' + p);
+  if (pg) pg.classList.add('active');
+  document.querySelectorAll('[data-page="' + p + '"]').forEach(function(n) { n.classList.add('active'); });
+  if (p === 'dashboard') loadDashboard();
+  if (p === 'scan') { loadScanLocations(); loadRecentMoves(); }
+  if (p === 'locations') loadLocations();
+  if (p === 'inventory') loadInventory('');
+  if (p === 'labels') loadLabels();
+  if (p === 'ebay') renderOrders();
+  if (p === 'listings') renderListings();
+  if (p === 'health') loadInventoryHealth();
+  if (p === 'admin') loadAdmin();
+}
+
+function showToast(msg, isErr) {
+  var t = document.getElementById('toast');
+  var icon = t.querySelector('svg');
+  document.getElementById('toast-msg').textContent = msg;
+  icon.style.color = isErr ? 'var(--err)' : 'var(--success)';
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════
+//  MODALS
+// ═══════════════════════════════════════════════════════
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(function(m) {
+  m.addEventListener('click', function(e) { if (e.target === m) m.classList.remove('open'); });
+});
+function openAddLocation() { document.getElementById('new-loc-name').value=''; openModal('modal-add-location'); setTimeout(function(){ document.getElementById('new-loc-name').focus(); },100); }
+function openAddItem() { document.getElementById('new-item-serial').value=''; openModal('modal-add-item'); setTimeout(function(){ document.getElementById('new-item-serial').focus(); },100); }
+function openAddSeq() { document.getElementById('new-seq-prefix').value=''; openModal('modal-add-seq'); setTimeout(function(){ document.getElementById('new-seq-prefix').focus(); },100); }
+
+// ═══════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════
+async function loadDashboard() {
+  setSyncing();
+  try {
+    var stats = await api('/stats');
+    document.getElementById('dash-total').textContent  = (+stats.items.total).toLocaleString();
+    document.getElementById('dash-stored').textContent = (+stats.items.stored).toLocaleString();
+    document.getElementById('dash-staged').textContent = (+stats.items.staged).toLocaleString();
+    document.getElementById('dash-locs').textContent   = (+stats.locations.total).toLocaleString();
+
+    var tb = document.getElementById('moves-log');
+    if (!stats.recentMoves.length) {
+      tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:18px">No moves yet</td></tr>';
+    } else {
+      tb.innerHTML = stats.recentMoves.map(function(m) {
+        return '<tr><td class="mono" style="color:var(--text)">' + m.serial + '</td><td class="mono">' + (m.from_location||'–') + '</td><td class="mono">' + m.to_location + '</td><td>' + (m.moved_by||'dynatrack') + '</td><td class="mono">' + new Date(m.moved_at).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}) + '</td></tr>';
+      }).join('');
+    }
+    setSynced();
+
+    // Check eBay
+    var ebay = await api('/ebay/health');
+    document.getElementById('ebay-status-card').innerHTML = ebay.connected
+      ? '<div class="sl" style="margin-bottom:4px">eBay API</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span class="sync-dot"></span><span style="font-size:13px;color:var(--success)">Connected · dynatrack</span></div>'
+      : '<div class="sl" style="margin-bottom:4px">eBay API</div><div style="font-size:12px;color:var(--muted);margin-top:6px">' + ebay.message + '</div>';
+  } catch(e) { setSyncErr(); showToast('DB error: ' + e.message, true); }
+}
+
+async function dashSearch(v) {
+  var el = document.getElementById('dash-results');
+  if (!v.trim()) { el.innerHTML = ''; return; }
+  try {
+    var items = await api('/items?search=' + encodeURIComponent(v) + '&limit=10');
+    if (!items.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted);margin-bottom:8px">No items found for "'+v+'"</div>'; return; }
+    el.innerHTML = items.map(function(i) {
+      return '<div class="result-card" style="margin-bottom:8px;cursor:pointer" onclick="navigate(\'inventory\')">'
+        + '<div class="mono" style="font-size:14px;color:var(--text)">' + i.serial + '</div>'
+        + '<div style="display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--muted)">'
+        + '<span>📍 ' + (i.location||'No location') + '</span>'
+        + '<span>' + (i.status||'–') + '</span>'
+        + '</div></div>';
+    }).join('');
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCAN & MOVE
+// ═══════════════════════════════════════════════════════
+var scanLocations = [];
+var selectedLocName = '';
+var scannedSerial = '';
+
+async function loadScanLocations() {
+  try {
+    scanLocations = await api('/locations');
+  } catch(e) {}
+}
+
+document.getElementById('scan-in').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && this.value.trim()) handleScan(this.value.trim());
+});
+
+async function handleScan(serial) {
+  scannedSerial = serial;
+  document.getElementById('scan-in').value = '';
+  var el = document.getElementById('scan-result');
+  el.style.display = 'block';
+  document.getElementById('scan-serial').textContent = serial;
+  document.getElementById('scan-curloc').textContent = '…';
+  document.getElementById('scan-status').innerHTML = '';
+  try {
+    var item = await api('/items/' + encodeURIComponent(serial));
+    document.getElementById('scan-curloc').textContent = item.location || 'None';
+    var sc = item.status === 'STORED' ? 'bg-s' : item.status === 'STAGED_UNLISTED' ? 'bg-p' : 'bg-m';
+    document.getElementById('scan-status').innerHTML = '<span class="badge ' + sc + '">' + item.status + '</span>';
+  } catch(e) {
+    document.getElementById('scan-curloc').textContent = 'New item';
+    document.getElementById('scan-status').innerHTML = '<span class="badge bg-w">NEW</span>';
+  }
+}
+
+function filterLocs(v) {
+  var dd = document.getElementById('loc-dropdown');
+  if (!v) { dd.style.display = 'none'; return; }
+  var q = v.toLowerCase();
+  var matches = scanLocations.filter(function(l) { return l.name.toLowerCase().indexOf(q) >= 0; }).slice(0, 20);
+  if (!matches.length) { dd.style.display = 'none'; return; }
+  dd.style.display = 'block';
+  dd.innerHTML = matches.map(function(l) {
+    return '<div onclick="selectLoc(\'' + l.name + '\')" style="padding:8px 12px;cursor:pointer;font-family:monospace;font-size:12px;color:var(--text);border-bottom:1px solid var(--border)">' + l.name + ' <span style="color:var(--muted);font-size:10px">' + l.type + '</span></div>';
+  }).join('');
+}
+
+function selectLoc(name) {
+  selectedLocName = name;
+  document.getElementById('selected-loc').textContent = name;
+  document.getElementById('loc-filter').value = '';
+  document.getElementById('loc-dropdown').style.display = 'none';
+}
+
+async function doMove() {
+  if (!scannedSerial) { showToast('Scan an item first', true); return; }
+  if (!selectedLocName) { showToast('Select a destination', true); return; }
+  var btn = document.getElementById('move-btn');
+  btn.disabled = true;
+  setSyncing();
+  try {
+    await api('/move', { method: 'POST', body: { serial: scannedSerial, to_location: selectedLocName } });
+    showToast('Moved ' + scannedSerial + ' → ' + selectedLocName);
+    setSynced();
+    resetScan();
+    loadRecentMoves();
+  } catch(e) { setSyncErr(); showToast('Move failed: ' + e.message, true); }
+  btn.disabled = false;
+}
+
+function resetScan() {
+  scannedSerial = '';
+  selectedLocName = '';
+  document.getElementById('scan-result').style.display = 'none';
+  document.getElementById('selected-loc').textContent = '–';
+  document.getElementById('scan-in').value = '';
+  document.getElementById('scan-in').focus();
+}
+
+async function loadRecentMoves() {
+  try {
+    var moves = await api('/moves?limit=20');
+    var tb = document.getElementById('move-history');
+    if (!moves.length) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:18px">No moves yet</td></tr>'; return; }
+    tb.innerHTML = moves.map(function(m) {
+      return '<tr><td class="mono" style="color:var(--text)">' + m.serial + '</td><td class="mono">' + (m.from_location||'–') + '</td><td class="mono">' + m.to_location + '</td><td class="mono">' + new Date(m.moved_at).toLocaleString('en-AU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}) + '</td></tr>';
+    }).join('');
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════
+//  LOCATIONS
+// ═══════════════════════════════════════════════════════
+var allLocations = [];
+var locZone = 'all';
+var locSearch = '';
+
+async function loadLocations() {
+  setSyncing();
+  try {
+    allLocations = await api('/locations');
+    document.getElementById('loc-count-label').textContent = allLocations.length + ' locations';
+    buildZoneTabs();
+    renderLocGrid();
+    setSynced();
+  } catch(e) { setSyncErr(); showToast('Locations error: ' + e.message, true); }
+}
+
+function buildZoneTabs() {
+  var types = ['all'].concat([...new Set(allLocations.map(function(l){ return l.type; }))].sort());
+  var el = document.getElementById('zone-tabs');
+  el.innerHTML = types.map(function(t) {
+    return '<button class="tab' + (t === locZone ? ' active' : '') + '" onclick="setLocZone(\'' + t + '\',this)">' + (t === 'all' ? 'All' : t) + '</button>';
+  }).join('');
+}
+
+function setLocZone(z, btn) {
+  locZone = z;
+  document.querySelectorAll('#zone-tabs .tab').forEach(function(t) { t.classList.remove('active'); });
+  btn.classList.add('active');
+  renderLocGrid();
+}
+
+function filterLocGrid(v) { locSearch = v.toLowerCase(); renderLocGrid(); }
+
+function renderLocGrid() {
+  var data = allLocations;
+  if (locZone !== 'all') data = data.filter(function(l){ return l.type === locZone; });
+  if (locSearch) data = data.filter(function(l){ return l.name.toLowerCase().indexOf(locSearch) >= 0; });
+  var el = document.getElementById('loc-grid');
+  if (!data.length) { el.innerHTML = '<div class="loading">No locations found</div>'; return; }
+  el.innerHTML = data.map(function(l) {
+    return '<div class="lc"><div class="lid">' + l.name + '</div><div class="lct">' + l.type + '</div></div>';
+  }).join('');
+}
+
+async function addLocation() {
+  var name = document.getElementById('new-loc-name').value.trim().toUpperCase();
+  var type = document.getElementById('new-loc-type').value;
+  if (!name) { showToast('Enter a location name', true); return; }
+  try {
+    await api('/locations', { method: 'POST', body: { name, type } });
+    closeModal('modal-add-location');
+    showToast('Location ' + name + ' added');
+    loadLocations();
+  } catch(e) { showToast('Error: ' + e.message, true); }
+}
+
+async function bulkAddLocations() {
+  var lines = document.getElementById('bulk-locs').value.trim().split('\n').map(function(l){ return l.trim().toUpperCase(); }).filter(Boolean);
+  var type = document.getElementById('bulk-type').value;
+  if (!lines.length) { showToast('Enter at least one location', true); return; }
+  var ok = 0;
+  for (var n of lines) {
+    try { await api('/locations', { method: 'POST', body: { name: n, type } }); ok++; } catch(e) {}
+  }
+  showToast('Added ' + ok + ' of ' + lines.length + ' locations');
+  loadLocations();
+  document.getElementById('bulk-locs').value = '';
+}
+
+// ═══════════════════════════════════════════════════════
+//  INVENTORY
+// ═══════════════════════════════════════════════════════
+var invStatus = '';
+var invSearch = '';
+
+async function loadInventory(status) {
+  invStatus = status;
+  setSyncing();
+  try {
+    var params = 'limit=1000';
+    if (status) params += '&status=' + encodeURIComponent(status);
+    if (invSearch) params += '&search=' + encodeURIComponent(invSearch);
+    var items = await api('/items?' + params);
+    document.getElementById('inv-count').textContent = items.length + ' items' + (status ? ' · ' + status : '');
+    var tb = document.getElementById('inv-table');
+    if (!items.length) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:18px">No items found</td></tr>'; setSynced(); return; }
+    tb.innerHTML = items.map(function(i) {
+      var sc = i.status === 'STORED' ? 'bg-s' : i.status === 'STAGED_UNLISTED' ? 'bg-p' : i.status === 'SHIPPED' ? 'bg-m' : 'bg-w';
+      return '<tr><td class="mono" style="color:var(--text)">' + i.serial + '</td>'
+        + '<td><span class="badge ' + sc + '">' + i.status + '</span></td>'
+        + '<td class="mono">' + (i.location||'–') + '</td>'
+        + '<td style="color:var(--muted);font-size:11px">' + (i.notes||'') + '</td>'
+        + '<td class="mono">' + new Date(i.updated_at).toLocaleDateString('en-AU') + '</td></tr>';
+    }).join('');
+    setSynced();
+  } catch(e) { setSyncErr(); showToast('Inventory error: ' + e.message, true); }
+}
+
+function filterInvStatus(s, btn) {
+  document.querySelectorAll('#page-inventory .tab').forEach(function(t){ t.classList.remove('active'); });
+  btn.classList.add('active');
+  loadInventory(s);
+}
+
+function filterInv(v) { invSearch = v; loadInventory(invStatus); }
+
+async function addItem() {
+  var serial   = document.getElementById('new-item-serial').value.trim();
+  var status   = document.getElementById('new-item-status').value;
+  var location = document.getElementById('new-item-location').value.trim().toUpperCase() || null;
+  var notes    = document.getElementById('new-item-notes').value.trim() || null;
+  if (!serial) { showToast('Enter a serial', true); return; }
+  try {
+    await api('/items', { method: 'POST', body: { serial, status, location, notes } });
+    closeModal('modal-add-item');
+    showToast('Item ' + serial + ' added');
+    loadInventory(invStatus);
+  } catch(e) { showToast('Error: ' + e.message, true); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  LABELS
+// ═══════════════════════════════════════════════════════
+var seqData = [];
+
+async function loadLabels() {
+  // Load sequences for prefix dropdown
+  try {
+    seqData = await api('/sequences');
+    var sel = document.getElementById('lbl-prefix');
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">– manual entry –</option>' + seqData.map(function(s) {
+      return '<option value="' + s.prefix + '">' + s.prefix + ' (next: ' + s.next_num + ')</option>';
+    }).join('');
+    sel.value = cur;
+    renderSeqDisplay();
+  } catch(e) {}
+  // Load print history
+  try {
+    var log = await api('/print-log');
+    var tb = document.getElementById('print-history');
+    if (!log.length) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:18px">No labels printed yet</td></tr>'; return; }
+    tb.innerHTML = log.map(function(p) {
+      return '<tr><td class="mono" style="color:var(--text)">' + p.value + '</td><td>' + p.type + '</td><td>' + p.qty + '</td><td class="mono">' + new Date(p.printed_at).toLocaleString('en-AU') + '</td></tr>';
+    }).join('');
+  } catch(e) {}
+}
+
+function renderSeqDisplay() {
+  var el = document.getElementById('seq-display');
+  if (!seqData.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No sequences defined</div>'; return; }
+  el.innerHTML = seqData.map(function(s) {
+    return '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:4px"><span class="mono" style="color:var(--brand)">' + s.prefix + '</span><span class="mono">' + s.prefix + '-' + String(s.next_num).padStart(4,'0') + '</span></div>';
+  }).join('');
+}
+
+function updateLabel() {
+  var v = document.getElementById('lbl-val').value || '–';
+  var d = document.getElementById('lbl-desc').value || 'Part description';
+  document.getElementById('lp-val').textContent = v;
+  document.getElementById('lp-desc').textContent = d;
+  // Fake barcode visual
+  document.getElementById('lp-bc').textContent = v.split('').map(function(c,i){ return i%3===0?'|':i%5===0?' ':'|'; }).join('');
+}
+
+async function autoSerial() {
+  var prefix = document.getElementById('lbl-prefix').value;
+  if (!prefix) { document.getElementById('lbl-val').value = ''; updateLabel(); return; }
+  try {
+    var r = await api('/sequences/next/' + encodeURIComponent(prefix), { method: 'POST' });
+    var num = String(r.issued).padStart(4, '0');
+    document.getElementById('lbl-val').value = r.prefix + '-' + num;
+    updateLabel();
+    // Refresh seq display
+    seqData = await api('/sequences');
+    renderSeqDisplay();
+  } catch(e) { showToast('Sequence error: ' + e.message, true); }
+}
+
+async function printLabel() {
+  var v   = document.getElementById('lbl-val').value.trim();
+  var t   = document.getElementById('lbl-type').value;
+  var qty = parseInt(document.getElementById('lbl-qty').value) || 1;
+  if (!v) { showToast('Enter a label value', true); return; }
+  window.print();
+  try {
+    await api('/print-log', { method: 'POST', body: { value: v, type: t, qty } });
+    showToast('Printed ' + qty + 'x ' + v);
+    loadLabels();
+  } catch(e) { showToast('Print log failed: ' + e.message, true); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  EBAY — CSV import (eBay Seller Hub exports)
+// ═══════════════════════════════════════════════════════
+var ORDERS   = [];
+var ALL_LISTINGS = [];
+var orderFilter = '', orderStatus = 'all';
+var listingFilter = '', listingStock = 'all';
+
+function parseCSV(text) {
+  var lines = text.split('\n').filter(Boolean);
+  if (!lines.length) return [];
+  var headers = lines[0].split(',').map(function(h){ return h.trim().replace(/^"|"$/g,''); });
+  return lines.slice(1).map(function(line) {
+    var cols = [], cur = '', inQ = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += c; }
+    }
+    cols.push(cur.trim());
+    var obj = {};
+    headers.forEach(function(h, i) { obj[h] = cols[i] || ''; });
+    return obj;
+  });
+}
+
+function importOrdersCSV(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var rows = parseCSV(e.target.result);
+    ORDERS = rows.map(function(r) {
+      // eBay Seller Hub column names (common ones)
+      return {
+        id:     r['Order number'] || r['Order ID'] || r['SaleRecordNumber'] || Object.values(r)[0],
+        buyer:  r['Buyer username'] || r['Buyer name'] || r['BuyerUserID'] || '–',
+        status: r['Order status'] || r['Status'] || 'Completed',
+        total:  parseFloat((r['Total price'] || r['Amount'] || r['TotalPrice'] || '0').replace(/[^0-9.]/g,'')) || 0,
+        date:   r['Sold on date'] || r['Creation date'] || r['SaleDate'] || '',
+        sku:    r['Custom label'] || r['SKU'] || r['Item number'] || '',
+        title:  r['Item title'] || r['Title'] || r['ItemTitle'] || '',
+      };
+    });
+    renderOrders();
+    showToast('Imported ' + ORDERS.length + ' orders');
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function importListingsCSV(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var rows = parseCSV(e.target.result);
+    ALL_LISTINGS = rows.map(function(r) {
+      return {
+        sku:   r['Custom label'] || r['SKU'] || r['Item number'] || '',
+        title: r['Item title'] || r['Title'] || '',
+        price: parseFloat((r['Start price'] || r['Price'] || '0').replace(/[^0-9.]/g,'')) || 0,
+        qty:   parseInt(r['Available quantity'] || r['Quantity'] || '0') || 0,
+        url:   r['Listing URL'] || r['ViewItemURL'] || '#',
+      };
+    });
+    renderListings();
+    showToast('Imported ' + ALL_LISTINGS.length + ' listings');
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function renderOrders() {
+  var data = ORDERS;
+  if (orderStatus !== 'all') data = data.filter(function(o){ return o.status === orderStatus; });
+  if (orderFilter) { var q = orderFilter.toLowerCase(); data = data.filter(function(o){ return (o.id+o.buyer+o.sku+o.title).toLowerCase().indexOf(q) >= 0; }); }
+  var completed = ORDERS.filter(function(o){ return o.status !== 'Cancelled'; });
+  var rev = completed.reduce(function(s,o){ return s + o.total; }, 0);
+  document.getElementById('eo-total').textContent     = ORDERS.length;
+  document.getElementById('eo-completed').textContent = completed.length;
+  document.getElementById('eo-cancelled').textContent = ORDERS.length - completed.length;
+  document.getElementById('eo-rev').textContent       = '$' + rev.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+  var show = data.slice(0, 300);
+  var tb = document.getElementById('orders-table');
+  if (!ORDERS.length) { tb.innerHTML = '<tr><td colspan="7" class="loading">No orders — import a CSV from eBay Seller Hub</td></tr>'; return; }
+  tb.innerHTML = show.map(function(o) {
+    return '<tr><td class="mono" style="color:var(--text)">' + o.id + '</td><td>' + o.buyer + '</td>'
+      + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + o.title + '</td>'
+      + '<td class="mono">' + o.sku + '</td>'
+      + '<td class="mono" style="color:var(--warn)">$' + o.total.toFixed(2) + '</td>'
+      + '<td class="mono">' + o.date + '</td>'
+      + '<td><span class="badge ' + (o.status === 'Cancelled' ? 'bg-e' : 'bg-s') + '">' + o.status + '</span></td></tr>';
+  }).join('');
+  if (data.length > 300) tb.insertAdjacentHTML('beforeend', '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:12px">Showing 300 of ' + data.length + '</td></tr>');
+}
+
+function filterOrders(v) { orderFilter = v; renderOrders(); }
+function filterOrderStatus(s, btn) { document.querySelectorAll('#page-ebay .tab').forEach(function(t){ t.classList.remove('active'); }); btn.classList.add('active'); orderStatus = s; renderOrders(); }
+
+function renderListings() {
+  var data = ALL_LISTINGS;
+  if (listingStock === 'stock') data = data.filter(function(l){ return l.qty > 0; });
+  else if (listingStock === 'zero') data = data.filter(function(l){ return l.qty === 0; });
+  if (listingFilter) { var q = listingFilter.toLowerCase(); data = data.filter(function(l){ return (l.sku+l.title).toLowerCase().indexOf(q) >= 0; }); }
+  document.getElementById('listings-sub').textContent = ALL_LISTINGS.length + ' listings · dynatrack';
+  var show = data.slice(0, 300);
+  document.getElementById('listings-table').innerHTML = show.length
+    ? show.map(function(l) {
+        return '<tr><td class="mono" style="color:var(--brand)">' + (l.sku||'–') + '</td>'
+          + '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + l.title + '</td>'
+          + '<td class="mono" style="color:var(--warn)">$' + l.price + '</td>'
+          + '<td class="mono" style="color:' + (l.qty>0?'var(--success)':'var(--muted)') + '">' + l.qty + '</td>'
+          + '<td><a href="' + l.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View ↗</a></td></tr>';
+      }).join('')
+    : '<tr><td colspan="5" class="loading">No listings match</td></tr>';
+  document.getElementById('listings-showing').textContent = 'Showing ' + show.length + ' of ' + data.length + ' listings';
+}
+
+function filterListings(v) { listingFilter = v; renderListings(); }
+function filterListingStock(s, btn) { document.querySelectorAll('#page-listings .tab').forEach(function(t){ t.classList.remove('active'); }); btn.classList.add('active'); listingStock = s; renderListings(); }
+
+// ═══════════════════════════════════════════════════════
+//  ADMIN
+// ═══════════════════════════════════════════════════════
+async function loadAdmin() {
+  try {
+    var health = await api('/health');
+    document.getElementById('admin-db-status').textContent = health.ok ? '● Live' : '✗ Error';
+    document.getElementById('admin-db-status').style.color = health.ok ? 'var(--success)' : 'var(--err)';
+  } catch(e) {
+    document.getElementById('admin-db-status').textContent = '✗ Unreachable';
+    document.getElementById('admin-db-status').style.color = 'var(--err)';
+  }
+  try {
+    var stats = await api('/stats');
+    document.getElementById('admin-locs').textContent  = (+stats.locations.total).toLocaleString();
+    document.getElementById('admin-items').textContent = (+stats.items.total).toLocaleString();
+  } catch(e) {}
+  try {
+    var counts = await api('/moves?limit=1');
+    // just used to confirm db alive
+  } catch(e) {}
+  // Load move count separately
+  try {
+    var mc = await fetch('/api/moves?limit=10000');
+    var mj = await mc.json();
+    document.getElementById('admin-moves').textContent = mj.length.toLocaleString();
+  } catch(e) {}
+  try {
+    seqData = await api('/sequences');
+    var el = document.getElementById('seq-admin');
+    el.innerHTML = seqData.map(function(s) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:6px">'
+        + '<div style="flex:1"><span class="mono" style="color:var(--brand)">' + s.prefix + '</span></div>'
+        + '<span class="mono">' + s.prefix + '-' + String(s.next_num).padStart(4,'0') + '</span>'
+        + '<button class="btn btn-s" style="padding:4px 8px;font-size:11px" onclick="editSeq(\'' + s.prefix + '\',' + s.next_num + ')">Edit</button>'
+        + '</div>';
+    }).join('');
+  } catch(e) {}
+}
+
+async function editSeq(prefix, current) {
+  var newVal = prompt('Set next number for ' + prefix + ' (current: ' + current + ')', current);
+  if (newVal && !isNaN(parseInt(newVal))) {
+    try {
+      await api('/sequences/' + encodeURIComponent(prefix), { method: 'PATCH', body: { next_num: parseInt(newVal) } });
+      showToast(prefix + ' updated to ' + newVal);
+      loadAdmin();
+      loadLabels();
+    } catch(e) { showToast('Error: ' + e.message, true); }
+  }
+}
+
+async function addSeq() {
+  var prefix = document.getElementById('new-seq-prefix').value.trim().toUpperCase();
+  if (!prefix) { showToast('Enter a prefix', true); return; }
+  try {
+    await api('/sequences', { method: 'POST', body: { prefix } });
+    closeModal('modal-add-seq');
+    showToast('Prefix ' + prefix + ' added');
+    loadAdmin();
+    loadLabels();
+  } catch(e) { showToast('Error: ' + e.message, true); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  EXPORT
+// ═══════════════════════════════════════════════════════
+async function exportCSV(type) {
+  var csv = '', filename = '';
+  try {
+    if (type === 'items') {
+      var items = await api('/items?limit=10000');
+      csv = 'Serial,Status,Location,Notes,Updated\n' + items.map(function(i){ return [i.serial,i.status,i.location||'',i.notes||'',i.updated_at||''].join(','); }).join('\n');
+      filename = 'dynatrack-items.csv';
+    } else if (type === 'locations') {
+      var locs = await api('/locations');
+      csv = 'Name,Type\n' + locs.map(function(l){ return l.name + ',' + l.type; }).join('\n');
+      filename = 'dynatrack-locations.csv';
+    } else if (type === 'moves') {
+      var moves = await api('/moves?limit=10000');
+      csv = 'Serial,From,To,By,Time\n' + moves.map(function(m){ return [m.serial,m.from_location||'',m.to_location,m.moved_by,m.moved_at].join(','); }).join('\n');
+      filename = 'dynatrack-moves.csv';
+    }
+    var a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = filename;
+    a.click();
+    showToast('Exported ' + filename);
+  } catch(e) { showToast('Export failed: ' + e.message, true); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  INVENTORY HEALTH
+// ═══════════════════════════════════════════════════════
+var healthData       = [];
+var healthFilter     = '';
+var healthStatusFilter = 'all';
+
+async function loadInventoryHealth() {
+  setSyncing();
+
+  if (!ALL_LISTINGS.length) {
+    document.getElementById('health-summary').innerHTML =
+      '⚠ No eBay listings loaded. Go to <strong>eBay → Listings</strong> and import a CSV from Seller Hub first, then come back and run Sync.';
+    setSyncErr();
+    return;
+  }
+
+  try {
+    // Pull all WMS items in one go
+    var [storedItems, stagedItems] = await Promise.all([
+      api('/items?status=STORED&limit=10000'),
+      api('/items?status=STAGED_UNLISTED&limit=10000'),
+    ]);
+
+    // ── Build lookup maps ──────────────────────────────
+    // eBay: sku (uppercase) → listing object
+    var ebayBySku = {};
+    ALL_LISTINGS.forEach(function(l) {
+      var key = (l.sku || '').trim().toUpperCase();
+      if (key) ebayBySku[key] = l;
+    });
+
+    // WMS: serial (uppercase) → array of items (handles duplicates)
+    var wmsBySku = {};
+    storedItems.forEach(function(item) {
+      var key = (item.serial || '').trim().toUpperCase();
+      if (!wmsBySku[key]) wmsBySku[key] = [];
+      wmsBySku[key].push(item);
+    });
+
+    // ── Classify every unique SKU/serial ──────────────
+    var allKeys = new Set(Object.keys(ebayBySku).concat(Object.keys(wmsBySku)));
+    var rows = [];
+
+    allKeys.forEach(function(key) {
+      var ebay   = ebayBySku[key] || null;
+      var wmsArr = wmsBySku[key]  || [];
+      var status;
+
+      if (ebay && wmsArr.length > 1)     status = 'Duplicate';
+      else if (ebay && wmsArr.length === 1) status = 'Matched';
+      else if (ebay && wmsArr.length === 0) status = 'eBay Only';
+      else                                   status = 'WMS Only';
+
+      rows.push({ key, status, ebay, wms: wmsArr });
+    });
+
+    healthData = rows;
+
+    // ── Stats ──────────────────────────────────────────
+    var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0 };
+    rows.forEach(function(r) { counts[r.status] = (counts[r.status]||0) + 1; });
+
+    document.getElementById('h-matched').textContent   = (counts['Matched']   ||0).toLocaleString();
+    document.getElementById('h-ebay-only').textContent = (counts['eBay Only'] ||0).toLocaleString();
+    document.getElementById('h-wms-only').textContent  = (counts['WMS Only']  ||0).toLocaleString();
+    document.getElementById('h-duplicate').textContent = (counts['Duplicate'] ||0).toLocaleString();
+    document.getElementById('h-staging').textContent   = stagedItems.length.toLocaleString();
+
+    // Update tab labels
+    var tabs = document.querySelectorAll('#health-tabs .tab');
+    var labels = ['All ('+rows.length+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+(counts['WMS Only']||0)+')', 'Duplicate ('+counts['Duplicate']+')'];
+    tabs.forEach(function(t,i){ if(labels[i]) t.textContent = labels[i]; });
+
+    var now = new Date().toLocaleString('en-AU');
+    document.getElementById('health-sync-label').textContent = 'eBay listings vs WMS active shelf inventory · Last sync: ' + now;
+    document.getElementById('health-summary').textContent =
+      'Comparing ' + Object.keys(ebayBySku).length.toLocaleString() + ' eBay listings with SKUs against ' +
+      storedItems.length.toLocaleString() + ' active shelf items. Staging items (' + stagedItems.length + ') are excluded from health buckets.';
+
+    renderHealthTable();
+    setSynced();
+  } catch(e) {
+    setSyncErr();
+    showToast('Health sync error: ' + e.message, true);
+  }
+}
+
+function renderHealthTable() {
+  var data = healthData;
+
+  // Filter by status
+  if (healthStatusFilter !== 'all') {
+    data = data.filter(function(r) { return r.status === healthStatusFilter; });
+  }
+
+  // Filter by search
+  if (healthFilter) {
+    var q = healthFilter.toLowerCase();
+    data = data.filter(function(r) {
+      var ebayText = r.ebay ? (r.ebay.title + ' ' + r.ebay.sku).toLowerCase() : '';
+      var wmsText  = r.wms.map(function(i){ return (i.serial + ' ' + (i.location||'')).toLowerCase(); }).join(' ');
+      return r.key.toLowerCase().indexOf(q) >= 0 || ebayText.indexOf(q) >= 0 || wmsText.indexOf(q) >= 0;
+    });
+  }
+
+  var show = data.slice(0, 500);
+  var tb   = document.getElementById('health-table');
+
+  if (!show.length) {
+    tb.innerHTML = '<tr><td colspan="4" class="loading">No results</td></tr>';
+    document.getElementById('health-showing').textContent = '';
+    return;
+  }
+
+  tb.innerHTML = show.map(function(r) {
+    // Status badge
+    var badgeCls = r.status === 'Matched'   ? 'bg-s' :
+                   r.status === 'Duplicate' ? 'bg-e' :
+                   r.status === 'eBay Only' ? 'bg-w' : 'bg-w';
+    var badge = '<span class="badge ' + badgeCls + '">' + r.status + '</span>';
+
+    // eBay column
+    var ebayCol = '–';
+    if (r.ebay) {
+      var urlPart = r.ebay.url && r.ebay.url !== '#'
+        ? '<br><a href="' + r.ebay.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View on eBay ↗</a>'
+        : '';
+      ebayCol = '<span class="mono" style="color:var(--brand)">' + r.ebay.sku + '</span>'
+        + ' · qty ' + r.ebay.qty
+        + ' · <span style="color:var(--success);font-weight:600">$' + r.ebay.price + '</span>'
+        + '<br><span style="font-size:12px;color:var(--text2)">' + (r.ebay.title||'').substring(0,55) + (r.ebay.title && r.ebay.title.length>55?'…':'') + '</span>'
+        + urlPart;
+    }
+
+    // WMS column — one line per item
+    var wmsCol = r.wms.length
+      ? r.wms.map(function(i) {
+          return '<div><span class="mono" style="color:var(--brand)">' + i.serial + '</span>'
+            + (i.location ? ' <span class="mono" style="color:var(--text2)">' + i.location + '</span>' : '') + '</div>';
+        }).join('')
+      : '<span style="color:var(--muted);font-size:12px">Not in WMS</span>';
+
+    return '<tr>'
+      + '<td class="mono" style="color:var(--text);font-weight:600">' + r.key + '</td>'
+      + '<td>' + badge + '</td>'
+      + '<td style="line-height:1.6">' + ebayCol + '</td>'
+      + '<td style="line-height:1.6">' + wmsCol + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var suffix = data.length > 500 ? ' (showing first 500)' : '';
+  document.getElementById('health-showing').textContent =
+    data.length.toLocaleString() + ' rows' + suffix;
+}
+
+function filterHealth(v) { healthFilter = v; renderHealthTable(); }
+
+function filterHealthStatus(s, btn) {
+  document.querySelectorAll('#health-tabs .tab').forEach(function(t){ t.classList.remove('active'); });
+  btn.classList.add('active');
+  healthStatusFilter = s;
+  renderHealthTable();
+}
+
+function exportHealthCSV() {
+  if (!healthData.length) { showToast('Run a sync first', true); return; }
+  var rows = healthData;
+  if (healthStatusFilter !== 'all') rows = rows.filter(function(r){ return r.status === healthStatusFilter; });
+  var csv = 'SKU,Status,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location\n';
+  rows.forEach(function(r) {
+    var wmsSerial = r.wms.map(function(i){ return i.serial; }).join(';');
+    var wmsLoc    = r.wms.map(function(i){ return i.location||''; }).join(';');
+    csv += [
+      r.key,
+      r.status,
+      '"' + (r.ebay ? (r.ebay.title||'').replace(/"/g,"'") : '') + '"',
+      r.ebay ? r.ebay.price : '',
+      r.ebay ? r.ebay.qty   : '',
+      wmsSerial,
+      wmsLoc,
+    ].join(',') + '\n';
+  });
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'hawker-inventory-health.csv';
+  a.click();
+  showToast('Exported health report');
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+document.getElementById('lp-date').textContent = new Date().toLocaleDateString('en-AU');
+
+// Check if we have a valid session, otherwise show login
+(async function() {
+  if (WMS_TOKEN) {
+    try {
+      var me = await fetch('/api/me', { headers: { 'x-wms-token': WMS_TOKEN } });
+      if (me.ok) {
+        var data = await me.json();
+        WMS_USER = data.username;
+        document.getElementById('nav-username').textContent = WMS_USER;
+        hideLogin();
+        loadDashboard();
+        return;
+      }
+    } catch(e) {}
+  }
+  showLogin();
+})();
+</script>
+</body>
+</html>
