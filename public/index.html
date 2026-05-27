@@ -1324,7 +1324,8 @@ async function loadInventoryHealth() {
 
   if (!ALL_LISTINGS.length) {
     document.getElementById('health-summary').innerHTML =
-      '⚠ No eBay listings loaded. Go to <strong>eBay → Listings</strong> and import a CSV from Seller Hub first, then come back and run Sync.';
+      '⚠ No eBay listings loaded yet — they load into memory on sync and reset on page refresh. ' +
+      '<button class="btn btn-p" style="margin-left:8px" onclick="syncEbayListings().then(loadInventoryHealth)">Sync eBay listings &amp; compare</button>';
     setSyncErr();
     return;
   }
