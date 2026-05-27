@@ -373,12 +373,7 @@ async function ebayCall(callName, bodyXml) {
     const req = https.request(opts, res => {
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => {
-        // TEMP DEBUG — remove after eBay diagnosis
-        console.error(`[eBay ${callName}] HTTP ${res.statusCode} · ${data.length} bytes`);
-        console.error(`[eBay ${callName}] RAW(0..2000): ${data.slice(0, 2000)}`);
-        resolve(data);
-      });
+      res.on('end', () => resolve(data));
     });
     req.on('error', reject);
     req.write(xml);
@@ -399,14 +394,9 @@ app.get('/api/ebay/health', requireAuth, async (req, res) => {
       res.json({ connected: true, message: 'eBay Trading API connected · Australia site' });
     } else {
       const errMsg = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage') || 'Unknown error';
-      // TEMP DEBUG — remove after eBay diagnosis
-      console.error('[eBay health] Ack=', JSON.stringify(parseXmlValue(xml, 'Ack')),
-                    '| has <Errors>:', /<Errors>/i.test(xml),
-                    '| raw(0..2000):', xml.slice(0, 2000));
       res.json({ connected: false, message: 'eBay API error: ' + errMsg });
     }
   } catch (e) {
-    console.error('[eBay health] threw:', (e && e.stack) || e);   // TEMP DEBUG — remove after eBay diagnosis
     res.json({ connected: false, message: 'Connection failed: ' + e.message });
   }
 });
