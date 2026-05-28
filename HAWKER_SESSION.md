@@ -11,6 +11,31 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 21:59 UTC — Fix false "DB Error" status indicator (honest DB-health dot) + admin moves 401 — frontend only ✅
+
+**Single deliverable:** the top status dot showed red "DB Error" on load/sign-in even when the DB was healthy (`/api/health` → `db:"connected"`), clearing only after an eBay sync. **Frontend only** (`public/index.html`); no server/db/schema changes (confirmed none needed — no auth race).
+
+### Diagnosis (reported + approved before patching)
+- **Root cause (Part A, indicator logic):** the top dot is global shared state. **`setSyncErr()` hardcoded the text to "DB Error"** and was called from **9 generic `catch` blocks** (dashboard, the 3 eBay sync funcs, inventory health, locations, move, …) — so **any** failure (eBay hiccup, 401, network) showed as "DB Error" though the DB was fine. The dot **never consulted `/api/health.db`**. Last-write-wins + a later successful eBay sync (`setSynced`) flipped it green → exactly the "clears after Listings/Orders" behaviour.
+- **The 401s:** (1) **CONFIRMED bug** — `loadAdmin`'s `fetch('/api/moves?limit=10000')` was a **bare fetch with no `x-wms-token`** → always 401 + blank move-count (its `catch` was empty, so not the indicator cause, but a real bug + one of the observed 401s). (2) The `/api/items` 401s = a **stale in-memory-session token** (server `sessions` Map is wiped on every restart/deploy — and we deployed many times today); `requireAuth` correctly 401s an unknown token. **No auth race:** `createToken` commits to the Map *before* returning the token (server.js:27); `validateToken` is synchronous. So no race fix was warranted.
+
+### Fix
+- **Part A — honest indicator:** new **`refreshDbStatus()`** hits `/api/health` (public, never 401) and drives the dot from the `db` field → **Live / DB Error (only when `db≠connected`) / Offline**; called on init + after sign-in. **`setSyncErr(err)`** now classifies: 401/"session expired" → amber **"Session expired"** (`.sync-dot.warn`); any other failure → defers to `refreshDbStatus()` (a failed eBay sync with a healthy DB stays "Live" — surfaced via toast + per-store cards, not the DB dot). All **9 catch sites pass the error**; the Inventory Health empty-state now calls `refreshDbStatus()` (empty listings ≠ DB error); `loadDashboard` toast reworded "DB error"→"Dashboard error".
+- **Part B —** `loadAdmin` move-count routed through `api()` (sends the token header). Removes the stray 401, populates the count.
+- Kept `setSyncing`/`setSynced` (benign activity feedback) and the `[Inventory Health]` diagnostic log (per constraint). No retries, no refresh logic, no server changes.
+
+### Verification (Rule 17)
+- Pushed `d097c88`; live by ~30s. `/api/health` 200 (`db:connected`). Served HTML contains `refreshDbStatus`, "Session expired", `.sync-dot.warn`, `api('/moves?limit=10000')`, and the diagnostic log. Inline `<script>` compiles clean (`vm`, 0 errors).
+- ⚠️ **REAL verification needs the architect:** sign in fresh and confirm the dot shows **"Live"** (or "Session expired" if a token actually lapsed) — **never "DB Error"** — when `/api/health.db == connected`; Inventory Health renders without first clicking Listings/Orders; and the dot still goes red if the DB is genuinely killed.
+
+**Files touched:** `public/index.html`, `SNAPSHOT_FRONTEND.md`. No backend.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (two tokens) · #8 broader Drive cleanup · retire legacy un-prefixed `TRADING_API_*` once multi-store stable · persist eBay listings server-side (`ebay_listings` table) · remove `[Inventory Health]` DIAGNOSTIC log after blank-page confirmed fixed · **NEW: Persistent session store** — sessions live in an in-memory Map that wipes on every server restart, logging everyone out on each deploy. Tolerable during dev; should be Postgres-backed before cutover hands the system to warehouse workers who'd be disrupted by mid-shift logouts. *(Open.)*
+
+**Cutover context (per web architect):** after this fix, the remaining cutover blockers are **#2 hands-on testing** and **#3 final data extract from the paid WMS** — both **architect tasks, not Claude Code tasks**. Next session should ideally focus on the testing checklist + data-extract plan rather than more code fixes, unless something else breaks.
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; status dot now reflects real DB health.
+
 ## 21:28 UTC — Inventory Health blank-page bug: defensive render guard + diagnostic (frontend only) ✅
 
 **Single deliverable:** diagnose (from code — no live repro) + fix the Inventory Health blank-page bug attributed to last session's UI rebuild (`a8e2319`). **Frontend only** (`public/index.html`); server/db/schema untouched. Confirmed `/api/items?status=STAGED_UNLISTED` is a real endpoint returning an array (server.js:138; valid status filter, Rule 11) — NOT a missing endpoint, so no STOP-and-report.
