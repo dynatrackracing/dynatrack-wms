@@ -11,6 +11,28 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 22:56 UTC — Remove Import CSV from Dashboard / eBay Orders / eBay Listings (CSV upload retired) — frontend only ✅
+
+**Single deliverable:** remove the "Import CSV" controls from the three pages. CSV upload is retired entirely. **Frontend only** (`public/index.html`); no server/db/schema changes. **Export CSV left entirely alone.**
+
+### Diagnosis (Rule 1)
+- **Controls removed:** Dashboard **"Quick Import" card** (promoted CSV import); eBay Orders + eBay Listings **`<label>Import CSV<input type="file" accept=".csv">`** buttons.
+- **JS removed (import-only):** `importOrdersCSV`, `importListingsCSV`, and their shared helper **`parseCSV`** (no other callers — confirmed). Kept the shared `ORDERS`/`ALL_LISTINGS` state + `renderOrders`/`renderListings`/`syncEbay*`.
+- **No orphaned backend route:** CSV import was **fully client-side** (`FileReader` → in-memory arrays); the importers never POSTed to the server, so **no upload route exists** to orphan. (Export routes untouched.)
+- **Copy reworded** so no import-CSV strings remain: Orders/Listings empty-table messages + the `renderOrders` fallback ("…import a CSV from eBay Seller Hub" → "…click Sync Live Orders/Listings"), the Inventory Health summary default (dropped the "Import …CSV first" sentence), and the section comment.
+- Minor: de-gridded the Dashboard eBay block (`g2`→plain div) so the per-store status card isn't left half-width after the card removal. Export CSV (Admin items/locations/moves + Inventory Health Export CSV) verified intact.
+
+### Verification (Rule 17)
+- Pushed `de4d92f` (1 file, **83 deletions / 6 insertions**). Live by ~30s. `/api/health` 200. Served HTML: **all import-CSV strings gone** (`Import CSV`, `importOrdersCSV`, `importListingsCSV`, `function parseCSV`, `accept=".csv"`, `Quick Import`); **Export CSV still present** (`Export Items CSV`, `exportCSV(`, `exportHealthCSV(`, "Export CSV" ×1). Other pages intact; inline `<script>` compiles clean (`vm`, 0 errors).
+
+**Files touched:** `public/index.html`, `SNAPSHOT_FRONTEND.md`. No backend.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (two tokens) · #8 broader Drive cleanup · retire legacy un-prefixed `TRADING_API_*` once multi-store stable · persist eBay listings server-side (`ebay_listings` table) · remove `[Inventory Health]` DIAGNOSTIC log after blank-page confirmed fixed · persistent (Postgres-backed) session store · decide whether to delete the orphaned `POST /api/sequences/next/:prefix` + `GET`/`POST /api/print-log` routes (from the Labels removal).
+
+**Cutover context (unchanged):** remaining blockers are **#2 hands-on testing** and **#3 final data extract** — architect tasks. Next session ideally focuses on those, not more code.
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; Import CSV gone from all three pages, Export CSV working, all pages load.
+
 ## 22:31 UTC — Remove the Labels page (dead UI) — frontend only ✅
 
 **Single deliverable:** remove the Labels page. Locked context: serials/barcode labels are minted/printed in a **separate external system** and scanned in (intake = the Scan flow), so the HawkerWMS Labels page was never used. **Frontend only** (`public/index.html`); no server/db/schema changes.
