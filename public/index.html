@@ -449,7 +449,19 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 
   <!-- Stat cards -->
-  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:20px" id="health-cards">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin-bottom:20px" id="health-cards">
+    <div class="card" style="border-left:3px solid var(--brand)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">WMS Items</div><div class="sv" style="color:var(--brand)" id="h-wms-items">–</div></div>
+        <div style="font-size:22px">🗃️</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--brand)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">eBay Inventory</div><div class="sv" style="color:var(--brand)" id="h-ebay-total">–</div></div>
+        <div style="font-size:22px">🛒</div>
+      </div>
+    </div>
     <div class="card" style="border-left:3px solid var(--success)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><div class="sl">Matched</div><div class="sv" style="color:var(--success)" id="h-matched">–</div></div>
@@ -1440,9 +1452,10 @@ async function loadInventoryHealth() {
       else if (ebay && wmsArr.length === 0) status = 'eBay Only';
       else                                  status = 'WMS Only';
 
-      rows.push({ key, status, ebay, stores, wms: wmsArr });
+      rows.push({ key, status, ebay, stores, ebayByStore: rec ? rec.stores : {}, wms: wmsArr });
     });
 
+    rows.sort(function(a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });  // default sort: SKU ascending
     healthData = rows;
 
     // ── Stats ──────────────────────────────────────────
@@ -1455,6 +1468,8 @@ async function loadInventoryHealth() {
     document.getElementById('h-duplicate').textContent = (counts['Duplicate'] ||0).toLocaleString();
     document.getElementById('h-cross').textContent     = (counts['Cross-listed'] ||0).toLocaleString();
     document.getElementById('h-staging').textContent   = stagedItems.length.toLocaleString();
+    document.getElementById('h-wms-items').textContent = storedItems.length.toLocaleString();
+    document.getElementById('h-ebay-total').textContent = ALL_LISTINGS.length.toLocaleString();
 
     // Update tab labels (order MUST match the #health-tabs DOM order, incl. Cross-listed)
     var tabs = document.querySelectorAll('#health-tabs .tab');
@@ -1463,9 +1478,10 @@ async function loadInventoryHealth() {
 
     var now = new Date().toLocaleString('en-AU');
     document.getElementById('health-sync-label').textContent = 'eBay listings vs WMS active shelf inventory · Last sync: ' + now;
+    var listingsWithSku = ALL_LISTINGS.filter(function(l){ return l.sku; }).length;
     document.getElementById('health-summary').textContent =
-      'Comparing ' + Object.keys(ebayByKey).length.toLocaleString() + ' eBay SKUs (union of all stores) against ' +
-      storedItems.length.toLocaleString() + ' active shelf items. Cross-listed = same SKU active on ≥2 stores (oversell risk). Staging items (' + stagedItems.length + ') are excluded from health buckets.';
+      'Comparing ' + listingsWithSku.toLocaleString() + ' eBay listings with SKUs against ' +
+      storedItems.length.toLocaleString() + ' active shelf items. Staging items (' + stagedItems.length.toLocaleString() + ') are excluded from health buckets.';
 
     renderHealthTable();
     setSynced();
@@ -1515,28 +1531,48 @@ function renderHealthTable() {
                    r.status === 'eBay Only'    ? 'bg-w' : 'bg-w';
     var badge = '<span class="badge ' + badgeCls + '">' + r.status + '</span>';
 
-    // eBay column
-    var ebayCol = '–';
-    if (r.ebay) {
-      var urlPart = r.ebay.url && r.ebay.url !== '#'
-        ? '<br><a href="' + r.ebay.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View on eBay ↗</a>'
+    // eBay column — one block per listing, store badge inline. Cross-listed shows BOTH stores stacked
+    // so the oversell risk (same SKU live on two stores) is visually obvious.
+    function listingBlock(l) {
+      if (!l) return '';
+      var fullTitle = (l.title || '').replace(/"/g, '&quot;');
+      var shortTitle = (l.title || '').substring(0, 55) + ((l.title || '').length > 55 ? '…' : '');
+      var urlPart = l.url && l.url !== '#'
+        ? ' · <a href="' + l.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View on eBay ↗</a>'
         : '';
-      var storeTags = (r.stores || []).map(storeBadge).join(' ');
-      ebayCol = (storeTags ? storeTags + '<br>' : '')
-        + '<span class="mono" style="color:var(--brand)">' + r.ebay.sku + '</span>'
-        + ' · qty ' + r.ebay.qty
-        + ' · <span style="color:var(--success);font-weight:600">$' + r.ebay.price + '</span>'
-        + '<br><span style="font-size:12px;color:var(--text2)">' + (r.ebay.title||'').substring(0,55) + (r.ebay.title && r.ebay.title.length>55?'…':'') + '</span>'
-        + urlPart;
+      return '<div style="margin-bottom:6px">'
+        + storeBadge(l.store) + ' '
+        + '<span class="mono" style="color:var(--brand)">' + (l.sku || '–') + '</span>'
+        + ' · qty ' + l.qty
+        + ' · <span style="color:var(--success);font-weight:600">$' + l.price + '</span>'
+        + urlPart
+        + '<br><span style="font-size:12px;color:var(--text2)" title="' + fullTitle + '">' + shortTitle + '</span>'
+        + '</div>';
+    }
+    var ebayCol;
+    if (r.status === 'Cross-listed' && r.ebayByStore) {
+      ebayCol = Object.keys(r.ebayByStore).sort().map(function(k){ return listingBlock(r.ebayByStore[k]); }).join('');
+    } else if (r.ebay) {
+      ebayCol = listingBlock(r.ebay);
+    } else {
+      ebayCol = '<span style="color:var(--muted)">—</span>';
     }
 
-    // WMS column — one line per item
+    // WMS column — plain serial (HawkerWMS has no item-detail page, so NOT a link; never link to
+    // the old paid WMS). All items stacked for Duplicate. Raw serial shown in parens if it differs
+    // from the normalized SKU key. Warehouse location in small muted text below.
     var wmsCol = r.wms.length
       ? r.wms.map(function(i) {
-          return '<div><span class="mono" style="color:var(--brand)">' + i.serial + '</span>'
-            + (i.location ? ' <span class="mono" style="color:var(--text2)">' + i.location + '</span>' : '') + '</div>';
+          var rawUpper = (i.serial || '').toUpperCase();
+          var differs  = rawUpper !== r.key;
+          var mainSerial = differs ? r.key : i.serial;
+          var rawParen   = differs ? ' <span style="color:var(--muted);font-size:11px">(' + i.serial + ')</span>' : '';
+          return '<div style="margin-bottom:6px">'
+            + '<span class="mono" style="color:var(--text);font-weight:600">' + mainSerial + '</span>' + rawParen
+            + (i.location ? '<br><span class="mono" style="font-size:11px;color:var(--muted)">' + i.location + '</span>' : '')
+            + '</div>';
         }).join('')
-      : '<span style="color:var(--muted);font-size:12px">Not in WMS</span>';
+      : '<span style="color:var(--muted)">—</span>';
 
     return '<tr>'
       + '<td class="mono" style="color:var(--text);font-weight:600">' + r.key + '</td>'
