@@ -534,6 +534,7 @@ async function fetchStoreOrders(key, days) {
         store:  key,
         id:     parseXmlValue(block, 'OrderID'),
         status: parseXmlValue(block, 'OrderStatus'),
+        shipped: parseXmlValue(block, 'ShippedTime') !== '',  // eBay ShippedTime present = order shipped
         buyer:  parseXmlValue(block, 'UserID') || parseXmlValue(block, 'BuyerUserID'),
         total:  parseFloat(parseXmlValue(block, 'Total') || '0'),
         date:   parseXmlValue(block, 'CreatedTime'),
@@ -608,6 +609,96 @@ app.get('/api/ebay/:store/orders', requireAuth, async (req, res) => {
     const orders = await fetchStoreOrders(s.key, days);
     res.json({ store: s.key, orders, count: orders.length, fetched: new Date().toISOString() });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Pick List (sold-but-unshipped orders → WMS shelf locations) ─────────────────
+// Rule 8 SKU↔serial normalization. MUST stay byte-identical to the frontend copy
+// (normalizeSkuKey inside loadInventoryHealth in public/index.html). Centralize later.
+function normalizeSkuKey(s) {
+  return (s || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
+}
+
+// GET /api/picklist — both stores' sold-but-unshipped orders, each line joined to the
+// matching WMS item's shelf location. Grouped one-order-per-package. Read-only.
+app.get('/api/picklist', requireAuth, async (req, res) => {
+  const days = parseInt(req.query.days || '90');
+
+  // WMS items: normalized serial → [{serial, location, status}]
+  let itemsByKey = {};
+  try {
+    const { rows } = await pool.query('SELECT serial, location, status FROM items');
+    for (const it of rows) {
+      const k = normalizeSkuKey(it.serial);
+      (itemsByKey[k] = itemsByKey[k] || []).push(it);
+    }
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+
+  // Orders from all configured stores; isolate per-store failures.
+  const results = await Promise.all(STORES.map(async s => {
+    if (!storeConfigured(s.key)) return { store: s.key, orders: [], error: `not configured: missing ${missingStoreVars(s.key).join(', ')}` };
+    try { return { store: s.key, orders: await fetchStoreOrders(s.key, days) }; }
+    catch (e) { return { store: s.key, orders: [], error: e.message }; }
+  }));
+  const errors = {};
+  results.forEach(r => { if (r.error) errors[r.store] = r.error; });
+
+  const orders = [];
+  for (const r of results) {
+    for (const o of r.orders) {
+      if (o.shipped || o.status === 'Cancelled') continue;   // sold-but-unshipped only
+      const lines = [];
+      for (const it of (o.items || [])) {
+        const key = normalizeSkuKey(it.sku);
+        const candidates = key ? (itemsByKey[key] || []) : [];
+        const open = candidates.filter(c => c.status !== 'SHIPPED');
+        if (candidates.length && open.length === 0) continue;  // matched item already SHIPPED in WMS → drop line
+        const match = open[0] || null;                         // first not-yet-shipped match (dup keys/q>1: see note)
+        lines.push({
+          sku:      it.sku,
+          title:    it.title,
+          qty:      it.qty,
+          serial:   match ? match.serial : null,
+          location: match ? (match.location || null) : null,
+          locationUnknown: !match,                             // no WMS match → flagged, NEVER dropped
+        });
+      }
+      if (!lines.length) continue;                             // whole order already shipped
+      lines.sort((a, b) => (a.location || '~~~').localeCompare(b.location || '~~~'));  // by location; unknowns last
+      orders.push({ store: o.store, id: o.id, buyer: o.buyer, date: o.date, lines });
+    }
+  }
+  const byStore = {};
+  orders.forEach(o => { byStore[o.store] = (byStore[o.store] || 0) + 1; });
+  res.json({ orders, count: orders.length, byStore, errors, fetched: new Date().toISOString() });
+});
+
+// POST /api/pick {serial} — mark one item picked. Mirrors /api/move's audited BEGIN…COMMIT:
+// set status=SHIPPED + clear location, then append exactly ONE moves row. READ-ONLY to eBay
+// (Rule 25) — only the WMS item changes, nothing is pushed back to eBay.
+app.post('/api/pick', requireAuth, async (req, res) => {
+  const { serial, moved_by = 'dynatrack' } = req.body;
+  if (!serial) return res.status(400).json({ error: 'serial required' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM items WHERE serial = $1', [serial]);
+    const item = rows[0];
+    if (!item) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Item not found: ' + serial }); }
+    await client.query("UPDATE items SET status = 'SHIPPED', location = NULL WHERE serial = $1", [serial]);
+    // 'SHIPPED' here is a SENTINEL in moves.to_location, NOT a real location (moves.to_location has no FK,
+    // and nothing joins it back to the locations table). Prior shelf is preserved in from_location.
+    const { rows: moveRows } = await client.query(
+      `INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, 'SHIPPED', $3) RETURNING *`,
+      [serial, item.location || null, moved_by]
+    );
+    await client.query('COMMIT');
+    res.json({ ok: true, move: moveRows[0], item: { serial, status: 'SHIPPED', location: null } });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
