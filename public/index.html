@@ -183,7 +183,6 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <button class="ni" data-page="scan"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M3 17v2a2 2 0 002 2h2m10-18h2a2 2 0 012 2v2m-4 14h2a2 2 0 002-2v-2M8 12h8M12 8v8"/></svg>Scan &amp; Move</button>
   <button class="ni" data-page="locations"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2C8.686 2 6 4.686 6 8c0 5.25 6 12 6 12s6-6.75 6-12c0-3.314-2.686-6-6-6z"/><circle cx="12" cy="8" r="2"/></svg>Locations</button>
   <button class="ni" data-page="inventory"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0v10l-8 4m0-14L4 7m8 4v10"/><path stroke-linecap="round" stroke-linejoin="round" d="M16 9.5l-4 2-4-2"/></svg>Inventory</button>
-  <button class="ni" data-page="labels"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg>Labels</button>
   <div class="nl">eBay</div>
   <button class="ni" data-page="ebay"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5m12-5l2 5M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"/></svg>Orders</button>
   <button class="ni" data-page="listings"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6M9 16h4"/></svg>Listings</button>
@@ -299,39 +298,6 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 </div>
 
 <!-- ═══════ LABELS ═══════ -->
-<div class="page" id="page-labels">
-  <div class="ph"><h1>Labels</h1><p>Auto-numbered barcode labels</p></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;max-width:720px">
-    <div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:14px">Generator</div>
-      <div class="fg"><label class="fl">Type</label><select class="fi2" id="lbl-type" onchange="updateLabel()"><option value="serial">Serial Number</option><option value="sku">SKU / Part Number</option><option value="location">Location Label</option></select></div>
-      <div class="fg"><label class="fl">Prefix (auto-number)</label><select class="fi2" id="lbl-prefix" onchange="autoSerial()"><option value="">– manual entry –</option></select></div>
-      <div class="fg"><label class="fl">Value</label><input class="fi2" id="lbl-val" placeholder="e.g. INT-4763" oninput="updateLabel()"></div>
-      <div class="fg"><label class="fl">Description</label><input class="fi2" id="lbl-desc" placeholder="Part description" oninput="updateLabel()"></div>
-      <div class="fg"><label class="fl">Quantity</label><input class="fi2" type="number" id="lbl-qty" value="1" min="1" max="100"></div>
-      <button class="btn btn-p" style="width:100%;justify-content:center;padding:12px" onclick="printLabel()">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-        Print Label
-      </button>
-    </div>
-    <div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:14px">Preview</div>
-      <div class="lp">
-        <div style="font-size:9px;color:#888;margin-bottom:5px">WAREHOUSE WMS · DYNATRACK</div>
-        <div class="lp-sku" id="lp-val">–</div>
-        <div class="lp-bc" id="lp-bc">||| || | ||</div>
-        <div class="lp-d" id="lp-desc">Part description</div>
-        <div style="margin-top:8px;font-size:9px;color:#888" id="lp-date"></div>
-      </div>
-      <div style="margin-top:14px;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px">Live Sequences</div>
-      <div id="seq-display"></div>
-    </div>
-  </div>
-  <div class="divider"></div>
-  <div style="font-size:13px;font-weight:600;margin-bottom:12px">Print History</div>
-  <div class="card"><div class="tw"><table><thead><tr><th>Value</th><th>Type</th><th>Qty</th><th>Time</th></tr></thead><tbody id="print-history"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody></table></div></div>
-</div>
-
 <!-- ═══════ EBAY ORDERS ═══════ -->
 <div class="page" id="page-ebay">
   <div class="phr">
@@ -718,7 +684,6 @@ function navigate(p) {
   if (p === 'scan') { loadScanLocations(); loadRecentMoves(); }
   if (p === 'locations') loadLocations();
   if (p === 'inventory') loadInventory('');
-  if (p === 'labels') loadLabels();
   if (p === 'ebay') { renderOrders(); if (!ORDERS.length) syncEbayOrders(); }
   if (p === 'listings') { renderListings(); if (!ALL_LISTINGS.length) syncEbayListings(); }
   if (p === 'health') loadInventoryHealth();
@@ -1023,73 +988,6 @@ async function addItem() {
 // ═══════════════════════════════════════════════════════
 var seqData = [];
 
-async function loadLabels() {
-  // Load sequences for prefix dropdown
-  try {
-    seqData = await api('/sequences');
-    var sel = document.getElementById('lbl-prefix');
-    var cur = sel.value;
-    sel.innerHTML = '<option value="">– manual entry –</option>' + seqData.map(function(s) {
-      return '<option value="' + s.prefix + '">' + s.prefix + ' (next: ' + s.next_num + ')</option>';
-    }).join('');
-    sel.value = cur;
-    renderSeqDisplay();
-  } catch(e) {}
-  // Load print history
-  try {
-    var log = await api('/print-log');
-    var tb = document.getElementById('print-history');
-    if (!log.length) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:18px">No labels printed yet</td></tr>'; return; }
-    tb.innerHTML = log.map(function(p) {
-      return '<tr><td class="mono" style="color:var(--text)">' + p.value + '</td><td>' + p.type + '</td><td>' + p.qty + '</td><td class="mono">' + new Date(p.printed_at).toLocaleString('en-AU') + '</td></tr>';
-    }).join('');
-  } catch(e) {}
-}
-
-function renderSeqDisplay() {
-  var el = document.getElementById('seq-display');
-  if (!seqData.length) { el.innerHTML = '<div style="font-size:12px;color:var(--muted)">No sequences defined</div>'; return; }
-  el.innerHTML = seqData.map(function(s) {
-    return '<div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:4px"><span class="mono" style="color:var(--brand)">' + s.prefix + '</span><span class="mono">' + s.prefix + '-' + String(s.next_num).padStart(4,'0') + '</span></div>';
-  }).join('');
-}
-
-function updateLabel() {
-  var v = document.getElementById('lbl-val').value || '–';
-  var d = document.getElementById('lbl-desc').value || 'Part description';
-  document.getElementById('lp-val').textContent = v;
-  document.getElementById('lp-desc').textContent = d;
-  // Fake barcode visual
-  document.getElementById('lp-bc').textContent = v.split('').map(function(c,i){ return i%3===0?'|':i%5===0?' ':'|'; }).join('');
-}
-
-async function autoSerial() {
-  var prefix = document.getElementById('lbl-prefix').value;
-  if (!prefix) { document.getElementById('lbl-val').value = ''; updateLabel(); return; }
-  try {
-    var r = await api('/sequences/next/' + encodeURIComponent(prefix), { method: 'POST' });
-    var num = String(r.issued).padStart(4, '0');
-    document.getElementById('lbl-val').value = r.prefix + '-' + num;
-    updateLabel();
-    // Refresh seq display
-    seqData = await api('/sequences');
-    renderSeqDisplay();
-  } catch(e) { showToast('Sequence error: ' + e.message, true); }
-}
-
-async function printLabel() {
-  var v   = document.getElementById('lbl-val').value.trim();
-  var t   = document.getElementById('lbl-type').value;
-  var qty = parseInt(document.getElementById('lbl-qty').value) || 1;
-  if (!v) { showToast('Enter a label value', true); return; }
-  window.print();
-  try {
-    await api('/print-log', { method: 'POST', body: { value: v, type: t, qty } });
-    showToast('Printed ' + qty + 'x ' + v);
-    loadLabels();
-  } catch(e) { showToast('Print log failed: ' + e.message, true); }
-}
-
 // ═══════════════════════════════════════════════════════
 //  EBAY LIVE SYNC
 // ═══════════════════════════════════════════════════════
@@ -1355,7 +1253,6 @@ async function editSeq(prefix, current) {
       await api('/sequences/' + encodeURIComponent(prefix), { method: 'PATCH', body: { next_num: parseInt(newVal) } });
       showToast(prefix + ' updated to ' + newVal);
       loadAdmin();
-      loadLabels();
     } catch(e) { showToast('Error: ' + e.message, true); }
   }
 }
@@ -1368,7 +1265,6 @@ async function addSeq() {
     closeModal('modal-add-seq');
     showToast('Prefix ' + prefix + ' added');
     loadAdmin();
-    loadLabels();
   } catch(e) { showToast('Error: ' + e.message, true); }
 }
 
@@ -1661,8 +1557,6 @@ function exportHealthCSV() {
 // ═══════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════
-document.getElementById('lp-date').textContent = new Date().toLocaleDateString('en-AU');
-
 // Check if we have a valid session, otherwise show login
 (async function() {
   if (WMS_TOKEN) {
