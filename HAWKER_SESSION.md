@@ -11,6 +11,30 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 21:28 UTC — Inventory Health blank-page bug: defensive render guard + diagnostic (frontend only) ✅
+
+**Single deliverable:** diagnose (from code — no live repro) + fix the Inventory Health blank-page bug attributed to last session's UI rebuild (`a8e2319`). **Frontend only** (`public/index.html`); server/db/schema untouched. Confirmed `/api/items?status=STAGED_UNLISTED` is a real endpoint returning an array (server.js:138; valid status filter, Rule 11) — NOT a missing endpoint, so no STOP-and-report.
+
+### Diagnostic findings (ranked) — reported before patching
+1. **The `a8e2319` Health render path is already fully guarded; no reproducible blank-causing throw found.** `loadInventoryHealth`'s data section was entirely inside `try/catch` (data-shape throw → caught → toast, never blank), and the page-health markup is structurally sound (8 balanced cards; `health-summary`/`health-showing` present). All of the brief's suspected failure modes are *already handled*: missing `store` → `l.store||'unknown'`; cross-listed access guarded by `r.status==='Cross-listed' && r.ebayByStore`; `listingBlock` null-guards; `r.wms` always an array; staging from `api()` (array or throws→caught). No `setInterval`/re-render loop (the ~8 paired `/api/items` calls = repeated navigations/syncs, noise).
+2. **Most likely trigger of the observed blank: a transient 401 / session-expiry mid-render** (the architect's "one 401"). `api()` on 401 calls `showLogin()` (full-screen overlay) **and** throws (index.html:658) → overlay covers the app (reads as blank), caught throw aborts populate, the 401 + in-flight `/api/items` show as the "24 console errors" (browser logs failed requests regardless), and it's **not reproducible after re-auth**. This is general auth-layer behaviour, **not an `a8e2319` logic bug**.
+3. **The one real code gap:** the empty-state branch + all `getElementById().innerHTML/textContent` writes had **no top-level guard and no visible error state** — so *any* throw left the user with **no signal**. That silent-blank mode is itself the worst part of the bug.
+
+### Fix (frontend only)
+- **Wrapped the ENTIRE `loadInventoryHealth()` body (incl. the empty-state branch) in `try/catch`.** On error: `console.error('[Inventory Health] render failed:', e)` + a **visible** error state rendered into the Health section ("⚠ failed to render — check Console" + **Reload Page** button) + the table shows "Could not render — see Console." → the section is **never truly blank again**. No auto-retry/refetch (per constraint).
+- **`// DIAGNOSTIC` `console.log` at top** printing input **shapes only** (`ALL_LISTINGS.length`, whether the first listing has a `store` tag, active status/store filters) — **no PII**. Marked for removal.
+- I did NOT fabricate a single "root cause fix" — the path was already guarded; the defensive layer IS the substantive fix for the no-signal blank, plus the empty-state is now inside the guard.
+
+### Verification (Rule 17)
+- Pushed `c8f05cc`; live by ~30s. `/api/health` 200. Served HTML contains all defensive markers (render start/failed logs, "Inventory Health failed to render", Reload button, DIAGNOSTIC comment). Inline `<script>` compiles clean (`vm`, 0 errors).
+- ⚠️ **REAL verification still needs the architect:** load the page **logged in**, exercise Health (sync + navigate), watch Console for the `[Inventory Health] render start` breadcrumb, and confirm no blank. If the blank recurs, the Console now carries the error + input shapes to pin it.
+
+**Files touched:** `public/index.html`, `SNAPSHOT_FRONTEND.md`. No backend.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (two tokens) · #8 broader Drive cleanup · retire legacy un-prefixed `TRADING_API_*` once multi-store stable · **NEW: Persist eBay listings server-side (new `ebay_listings` table)** so syncs are truly manual/scheduled and listings don't reset on page refresh — architectural fix replacing the in-memory `ALL_LISTINGS`; today every page load re-fetches live, against the spirit of Rule 24. *(Open.)* · **NEW: Remove the `DIAGNOSTIC` `console.log` from `loadInventoryHealth()`** once the blank-page bug is confirmed resolved via real user testing. *(Open.)*
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; Health page now fails safe (visible error + Reload) instead of blank.
+
 ## 21:05 UTC — Rebuild Inventory Health UI to old-WMS layout (multi-store-aware) — frontend only ✅
 
 **Single deliverable:** rebuild the Inventory Health page front-end to the old WMS layout (visual reference `Warehouse_WMS4.html` lives in claude.ai project knowledge — NOT in the repo, reference-only per CLAUDE.md; built from the brief's spec), adapted for HawkerWMS multi-store. **Frontend only** — `public/index.html` only; no `server.js`/`db/`/route changes (the multi-store data layer shipped last session).
