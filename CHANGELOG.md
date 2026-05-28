@@ -4,6 +4,8 @@ Chronological summary of all changes to HawkerWMS. Newest entries at the TOP. Ea
 
 ---
 
+## 2026-05-28 — Inventory Health verification (no code change): confirmed the blank-page symptom was already fixed (Option B, commit `1838259`) — present in canonical code + live in prod; `/api/ebay/listings` healthy (no `ebay_listings` table — listings are never persisted); Rule 8 SKU normalization correct in code. Root cause of the repeat brief = stale claude.ai project knowledge. Added CLAUDE.md note that `Warehouse_WMS*.html` in project knowledge are old-paid-WMS snapshots (reference-only, not HawkerWMS source).
+
 ## 2026-05-28 — Folder consolidation (follow-up #1 ✅): moved the four memory files into the git repo root (canonical now `C:\Users\atenr\dynatrack-wms-repo`; Drive folder abandoned). Updated CLAUDE.md (SYNC ARCHITECTURE + anti-rogue K) and CLAUDE_RULES (Rule 31 repo-canonical; Rule 36 memory-in-repo; Rule 37 project-knowledge manual re-upload, supersedes the dropped connector idea; Rule 38 snapshot regen). Generated first SNAPSHOT_ROUTES.md / SNAPSHOT_FRONTEND.md / SNAPSHOT_SCHEMA.md. No app-code/schema changes.
 
 ## 2026-05-28 — Project-knowledge auto-sync investigated; NO supported public API to write claude.ai project knowledge (Files API is separate; only undocumented cookie endpoints exist = forbidden brittle workaround). No sync built or run. Added CLAUDE_RULES 35 (architect/worker boundary) + 36 (memory-sync reality, no fake-success). Wrote `CONNECTOR-SETUP-RUNBOOK.md` for the supported path (claude.ai Google Drive connector, one-time architect UI setup) with an empirical live-sync-vs-snapshot verification step. Backlog (the 2026-05-27 entries) still needs a one-time manual upload to project knowledge.

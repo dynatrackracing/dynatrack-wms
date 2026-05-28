@@ -6,6 +6,22 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 01:38 UTC — Inventory Health verification (no code change)
+
+Investigated "Inventory Health is blank," briefed as "follow-up #1" from a **stale web-chat task list**. Read-only verification against the canonical repo (HEAD `578cf93`) + production:
+- `/api/ebay/listings` route healthy (prod `/api/health` 200; route verified returning 3,224 live listings on 2026-05-27).
+- **There is NO `ebay_listings` table** — eBay listings are never persisted; the route fetches them live and the browser holds them in the in-memory `ALL_LISTINGS` array. *(Corrected from the brief, which assumed a populated `ebay_listings` table — it does not exist.)*
+- SKU normalization (strip trailing letters, Rule 8) present and correct in code (`normalizeSkuKey`, index.html:1343).
+- Blank-page symptom was already resolved 2026-05-27 (commit `1838259`, "Option B"): empty state now shows a "Sync eBay listings & compare" button (index.html:1325-1331). Confirmed present in canonical code AND live in production this session.
+
+No code touched. **Root cause of the confusion: the web-chat's claude.ai project knowledge was out of date** — it still treated the Inventory Health blank page as an open "#1" item and predated the 2026-05-28 folder consolidation. The on-disk canonical `LAST_SESSION.md` shows it **CLOSED as item #6** (2026-05-27) within a **7-item** follow-up list whose #1 (Folder consolidation) is also already closed. *(The brief's "7 vs 12 follow-ups" description did not match the on-disk file — the on-disk list has 7 items; this entry records the accurate state.)*
+
+Also added a note to `CLAUDE.md` (CONTEXT YOU SHOULD ALWAYS HAVE LOADED): any `Warehouse_WMS*.html` files in the claude.ai project knowledge are browser-saved snapshots of the OLD paid WMS (`wms-prod.up.railway.app`) from data recovery — reference-only, NOT HawkerWMS source; do not edit or use them to diagnose HawkerWMS bugs.
+
+**Files touched:** `LAST_SESSION.md`, `CHANGELOG.md`, `CLAUDE.md`. No app-code or schema changes. Did not start follow-up #2.
+
+**Open follow-ups (unchanged):** #2 hands-on testing, #3 final data extract, #4 dashboard 503 health-card bug, #5 eBay token expiry.
+
 ## 00:47 UTC — Folder consolidation (follow-up #1 ✅): memory files moved into the git repo; DarkHawk discipline adopted
 
 **Single deliverable:** folder consolidation. The four memory files now live in the canonical git repo; CLAUDE.md/CLAUDE_RULES.md updated to the repo-canonical + manual-reupload reality; first SNAPSHOT_*.md generated; session-end routine extended. Did **not** start follow-up #2 (hands-on testing).

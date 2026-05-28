@@ -51,6 +51,7 @@ K. **REGENERATE SNAPSHOTS AT SESSION END** when code changed this session. If yo
 - eBay Trading API integration (XML-based), site ID 0 (US). Credentials in Railway env vars.
 - eBay SKU normalization: eBay SKUs have trailing letter suffixes (`INT4306R`, `MOD19595V`); WMS serials are bare (`INT4306`). Strip trailing letters before matching. (See CLAUDE_RULES rule 8.)
 - Supabase is dead. Never reference it, never restore it. (See CLAUDE_RULES rule 7.)
+- **`Warehouse_WMS*.html` files in the claude.ai project knowledge are browser-saved snapshots of the OLD paid WMS** (`wms-prod.up.railway.app`) from the data-recovery phase — **reference-only, NOT HawkerWMS source code.** Do not edit them, and never use them to diagnose HawkerWMS bugs. The canonical HawkerWMS source is this repo (`server.js`, `public/index.html`, `db/schema.sql`). (See rule 14 on the old-WMS separation.)
 
 ## SYNC ARCHITECTURE
 
