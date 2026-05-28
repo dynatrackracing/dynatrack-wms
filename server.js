@@ -319,25 +319,71 @@ app.post('/api/print-log', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── eBay Trading API ──────────────────────────────────────────────────────────
+// ── eBay Trading API (multi-store) ──────────────────────────────────────────────
 const https = require('https');
 
 const EBAY_ENDPOINT = 'https://api.ebay.com/ws/api.dll';
 
-function ebayHeaders(callName) {
+// Store registry. Adding a 3rd store later = ONE more entry here (key/label/prefix).
+// Each store's credentials come from `${prefix}_TRADING_API_{APP_NAME,CERT_NAME,DEV_NAME,TOKEN}`.
+// The legacy un-prefixed TRADING_API_* set is INTENTIONALLY IGNORED in multi-store mode —
+// it is kept in Railway only as a single-store rollback safety net and is never read here.
+const STORES = [
+  { key: 'dynatrack', label: 'Dynatrack', prefix: 'DYNATRACK' },
+  { key: 'autolumen', label: 'AutoLumen', prefix: 'AUTOLUMEN' },
+];
+const STORE_VARS = ['APP_NAME', 'CERT_NAME', 'DEV_NAME', 'TOKEN'];
+
+function getStore(key)      { return STORES.find(s => s.key === key) || null; }
+function missingStoreVars(key) {
+  const s = getStore(key);
+  if (!s) return STORE_VARS.map(n => `<unknown store '${key}'>`);
+  return STORE_VARS.map(n => `${s.prefix}_TRADING_API_${n}`).filter(v => !process.env[v]);
+}
+function storeConfigured(key) { return getStore(key) && missingStoreVars(key).length === 0; }
+
+// Read a store's credentials from ITS prefixed env vars only. No un-prefixed fallback, ever.
+function storeCreds(key) {
+  const s = getStore(key);
+  if (!s) return null;
+  return {
+    appName:  process.env[`${s.prefix}_TRADING_API_APP_NAME`]  || '',
+    certName: process.env[`${s.prefix}_TRADING_API_CERT_NAME`] || '',
+    devName:  process.env[`${s.prefix}_TRADING_API_DEV_NAME`]  || '',
+    token:    process.env[`${s.prefix}_TRADING_API_TOKEN`]     || '',
+  };
+}
+
+// Startup guardrail — loud per-store log, SOFT disable (no throw): a fat-fingered eBay
+// credential must never take down warehouse scan/move/label operations. A misconfigured
+// store is simply disabled and its /api/ebay routes fail loud on call.
+function validateStoreEnv() {
+  for (const s of STORES) {
+    const missing = missingStoreVars(s.key);
+    if (missing.length === 0) {
+      console.log(`[eBay] store '${s.key}' (${s.label}): credentials OK`);
+    } else {
+      console.error(`[eBay][MISCONFIG] store '${s.key}' (${s.label}): missing ${missing.join(', ')} — store DISABLED; its /api/ebay routes will fail loud on call. Other stores and the rest of the app keep running.`);
+    }
+  }
+  const legacy = STORE_VARS.map(n => `TRADING_API_${n}`).filter(v => process.env[v]);
+  if (legacy.length) {
+    console.log(`[eBay] legacy un-prefixed TRADING_API_* env vars detected (${legacy.join(', ')}) but IGNORED — multi-store mode reads only ${STORES.map(s => s.prefix + '_*').join(' / ')}. (Kept only as a single-store rollback safety net.)`);
+  }
+}
+validateStoreEnv();
+
+function ebayHeaders(store, callName) {
+  const c = storeCreds(store) || {};
   return {
     'X-EBAY-API-SITEID':       '0',    // US
     'X-EBAY-API-COMPATIBILITY-LEVEL': '967',
     'X-EBAY-API-CALL-NAME':    callName,
-    'X-EBAY-API-APP-NAME':     process.env.TRADING_API_APP_NAME  || '',
-    'X-EBAY-API-CERT-NAME':    process.env.TRADING_API_CERT_NAME || '',
-    'X-EBAY-API-DEV-NAME':     process.env.TRADING_API_DEV_NAME  || '',
+    'X-EBAY-API-APP-NAME':     c.appName  || '',
+    'X-EBAY-API-CERT-NAME':    c.certName || '',
+    'X-EBAY-API-DEV-NAME':     c.devName  || '',
     'Content-Type':            'text/xml',
   };
-}
-
-function ebayToken() {
-  return process.env.TRADING_API_TOKEN || '';
 }
 
 // Minimal XML → JS parser for eBay responses
@@ -353,11 +399,17 @@ function parseXmlAll(xml, tag) {
   return results;
 }
 
-async function ebayCall(callName, bodyXml) {
+// All eBay calls are store-scoped. `store` is REQUIRED — there is no default and no
+// shared/un-prefixed credential path, so a call can never silently use the wrong store.
+async function ebayCall(store, callName, bodyXml) {
+  if (!storeConfigured(store)) {
+    throw new Error(`store '${store}' not configured: missing ${missingStoreVars(store).join(', ')}`);
+  }
+  const creds = storeCreds(store);
   const xml = `<?xml version="1.0" encoding="utf-8"?>
 <${callName}Request xmlns="urn:ebay:apis:eBLBaseComponents">
   <RequesterCredentials>
-    <eBayAuthToken>${ebayToken()}</eBayAuthToken>
+    <eBayAuthToken>${creds.token}</eBayAuthToken>
   </RequesterCredentials>
   ${bodyXml}
 </${callName}Request>`;
@@ -368,7 +420,7 @@ async function ebayCall(callName, bodyXml) {
       hostname: url.hostname,
       path:     url.pathname,
       method:   'POST',
-      headers:  { ...ebayHeaders(callName), 'Content-Length': Buffer.byteLength(xml) },
+      headers:  { ...ebayHeaders(store, callName), 'Content-Length': Buffer.byteLength(xml) },
     };
     const req = https.request(opts, res => {
       let data = '';
@@ -381,144 +433,181 @@ async function ebayCall(callName, bodyXml) {
   });
 }
 
-// Health check — exercises the same call live sync uses (GetMyeBaySelling) so the card
-// reflects real sync capability, instead of the flakier GeteBayOfficialTime probe which
-// can return a non-XML HTTP 503 gateway page that has no <Ack> and no error envelope.
-app.get('/api/ebay/health', requireAuth, async (req, res) => {
-  const configured = !!(process.env.TRADING_API_TOKEN && process.env.TRADING_API_APP_NAME);
-  if (!configured) {
-    return res.json({ connected: false, message: 'TRADING_API_* environment variables not set in Railway.' });
+// ── Per-store fetch helpers (one store each) ────────────────────────────────────
+// Health probe — exercises the same call live sync uses (GetMyeBaySelling) so the card
+// reflects real sync capability. Returns a tagged status object; never throws.
+async function fetchStoreHealth(key) {
+  const s = getStore(key);
+  if (!s) return { key, label: key, connected: false, message: `unknown store '${key}'` };
+  if (!storeConfigured(key)) {
+    return { key, label: s.label, connected: false, message: `${s.label} · not configured: missing ${missingStoreVars(key).join(', ')}` };
   }
   try {
-    const xml = await ebayCall('GetMyeBaySelling',
+    const xml = await ebayCall(key, 'GetMyeBaySelling',
       '<ActiveList><Pagination><EntriesPerPage>1</EntriesPerPage><PageNumber>1</PageNumber></Pagination></ActiveList>');
     const ack = parseXmlValue(xml, 'Ack');
     if (ack === 'Success' || ack === 'Warning') {
-      res.json({ connected: true, message: 'eBay Trading API connected' });
+      return { key, label: s.label, connected: true, message: `${s.label} · eBay Trading API connected` };
     } else if (!ack) {
       // No <Ack> => not a Trading API XML response (e.g. eBay's HTTP 503 "Service Unavailable" HTML page).
-      res.json({ connected: false, message: 'eBay status probe got a non-API response (likely an HTTP 503/maintenance page). Live sync may still be working — check Listings/Orders.' });
-    } else {
-      const errMsg = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage') || 'eBay API error';
-      res.json({ connected: false, message: 'eBay API error: ' + errMsg });
+      return { key, label: s.label, connected: false, message: `${s.label} · status probe got a non-API response (likely an HTTP 503/maintenance page). Live sync may still be working.` };
     }
+    const errMsg = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage') || 'eBay API error';
+    return { key, label: s.label, connected: false, message: `${s.label} · eBay API error: ${errMsg}` };
   } catch (e) {
-    res.json({ connected: false, message: 'Connection failed: ' + e.message });
+    return { key, label: s.label, connected: false, message: `${s.label} · connection failed: ${e.message}` };
   }
-});
+}
 
-// Orders — fetches last 90 days, paginates automatically
-app.get('/api/ebay/orders', requireAuth, async (req, res) => {
-  if (!process.env.TRADING_API_TOKEN) {
-    return res.status(503).json({ error: 'eBay API not configured' });
-  }
-  try {
-    const days    = parseInt(req.query.days || '90');
-    const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    let   page    = 1;
-    const orders  = [];
-
-    while (true) {
-      const xml = await ebayCall('GetOrders', `
-        <CreateTimeFrom>${fromDate}</CreateTimeFrom>
-        <CreateTimeTo>${new Date().toISOString()}</CreateTimeTo>
-        <OrderRole>Seller</OrderRole>
-        <OrderStatus>All</OrderStatus>
+// Active listings for one store, each tagged with `store`. Throws on API/config error.
+async function fetchStoreListings(key) {
+  const listings = [];
+  let page = 1;
+  while (true) {
+    const xml = await ebayCall(key, 'GetMyeBaySelling', `
+      <ActiveList>
+        <Include>true</Include>
+        <IncludeNotes>false</IncludeNotes>
         <Pagination>
-          <EntriesPerPage>100</EntriesPerPage>
+          <EntriesPerPage>200</EntriesPerPage>
           <PageNumber>${page}</PageNumber>
         </Pagination>
-      `);
-
-      const ack = parseXmlValue(xml, 'Ack');
-      if (ack !== 'Success' && ack !== 'Warning') {
-        const err = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage');
-        throw new Error(err || 'eBay API error');
-      }
-
-      const orderBlocks = parseXmlAll(xml, 'Order');
-      for (const block of orderBlocks) {
-        const transBlocks = parseXmlAll(block, 'Transaction');
-        const items = transBlocks.map(t => ({
-          title:    parseXmlValue(t, 'Title'),
-          sku:      parseXmlValue(t, 'SKU') || parseXmlValue(t, 'SellerSKU'),
-          qty:      parseInt(parseXmlValue(t, 'QuantityPurchased') || '1'),
-          price:    parseFloat(parseXmlValue(t, 'TransactionPrice') || '0'),
-        }));
-        orders.push({
-          id:       parseXmlValue(block, 'OrderID'),
-          status:   parseXmlValue(block, 'OrderStatus'),
-          buyer:    parseXmlValue(block, 'UserID') || parseXmlValue(block, 'BuyerUserID'),
-          total:    parseFloat(parseXmlValue(block, 'Total') || '0'),
-          date:     parseXmlValue(block, 'CreatedTime'),
-          items,
-        });
-      }
-
-      const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
-      if (page >= totalPages) break;
-      page++;
+      </ActiveList>
+      <HideVariations>false</HideVariations>
+    `);
+    const ack = parseXmlValue(xml, 'Ack');
+    if (ack !== 'Success' && ack !== 'Warning') {
+      const err = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage');
+      throw new Error(err || 'eBay API error');
     }
-
-    res.json({ orders, count: orders.length, fetched: new Date().toISOString() });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    const itemBlocks = parseXmlAll(xml, 'ItemID').length ? parseXmlAll(xml, 'Item') : [];
+    for (const block of itemBlocks) {
+      listings.push({
+        store:   key,
+        itemId:  parseXmlValue(block, 'ItemID'),
+        sku:     parseXmlValue(block, 'SKU') || parseXmlValue(block, 'SellerSKU'),
+        title:   parseXmlValue(block, 'Title'),
+        price:   parseFloat(parseXmlValue(block, 'CurrentPrice') || parseXmlValue(block, 'StartPrice') || '0'),
+        qty:     parseInt(parseXmlValue(block, 'QuantityAvailable') || parseXmlValue(block, 'Quantity') || '0'),
+        url:     parseXmlValue(block, 'ViewItemURL'),
+      });
+    }
+    const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
+    if (page >= totalPages || itemBlocks.length === 0) break;
+    page++;
+    if (page > 50) break; // safety cap — 10,000 listings max
   }
+  return listings;
+}
+
+// Orders (last `days`) for one store, each tagged with `store`. Throws on API/config error.
+async function fetchStoreOrders(key, days) {
+  const fromDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const orders = [];
+  let page = 1;
+  while (true) {
+    const xml = await ebayCall(key, 'GetOrders', `
+      <CreateTimeFrom>${fromDate}</CreateTimeFrom>
+      <CreateTimeTo>${new Date().toISOString()}</CreateTimeTo>
+      <OrderRole>Seller</OrderRole>
+      <OrderStatus>All</OrderStatus>
+      <Pagination>
+        <EntriesPerPage>100</EntriesPerPage>
+        <PageNumber>${page}</PageNumber>
+      </Pagination>
+    `);
+    const ack = parseXmlValue(xml, 'Ack');
+    if (ack !== 'Success' && ack !== 'Warning') {
+      const err = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage');
+      throw new Error(err || 'eBay API error');
+    }
+    const orderBlocks = parseXmlAll(xml, 'Order');
+    for (const block of orderBlocks) {
+      const transBlocks = parseXmlAll(block, 'Transaction');
+      const items = transBlocks.map(t => ({
+        title: parseXmlValue(t, 'Title'),
+        sku:   parseXmlValue(t, 'SKU') || parseXmlValue(t, 'SellerSKU'),
+        qty:   parseInt(parseXmlValue(t, 'QuantityPurchased') || '1'),
+        price: parseFloat(parseXmlValue(t, 'TransactionPrice') || '0'),
+      }));
+      orders.push({
+        store:  key,
+        id:     parseXmlValue(block, 'OrderID'),
+        status: parseXmlValue(block, 'OrderStatus'),
+        buyer:  parseXmlValue(block, 'UserID') || parseXmlValue(block, 'BuyerUserID'),
+        total:  parseFloat(parseXmlValue(block, 'Total') || '0'),
+        date:   parseXmlValue(block, 'CreatedTime'),
+        items,
+      });
+    }
+    const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
+    if (page >= totalPages) break;
+    page++;
+  }
+  return orders;
+}
+
+// ── Combined eBay routes (fan out over configured stores, tag + merge) ──────────
+// Each route isolates per-store failures: one store erroring never blanks the others.
+app.get('/api/ebay/health', requireAuth, async (req, res) => {
+  const stores = await Promise.all(STORES.map(s => fetchStoreHealth(s.key)));
+  // Aggregate fields kept only for backward-compatibility (pre-multi-store frontends);
+  // the multi-store dashboard renders per-store from `stores`.
+  const connected = stores.some(s => s.connected);
+  const message = stores.map(s => `${s.label}: ${s.connected ? 'connected' : 'not connected'}`).join(' · ');
+  res.json({ connected, message, stores });
 });
 
-// Listings — fetches active listings with SKU and quantity
+app.get('/api/ebay/orders', requireAuth, async (req, res) => {
+  const days = parseInt(req.query.days || '90');
+  const results = await Promise.all(STORES.map(async s => {
+    if (!storeConfigured(s.key)) return { store: s.key, orders: [], error: `not configured: missing ${missingStoreVars(s.key).join(', ')}` };
+    try { return { store: s.key, orders: await fetchStoreOrders(s.key, days) }; }
+    catch (e) { return { store: s.key, orders: [], error: e.message }; }
+  }));
+  const orders = results.flatMap(r => r.orders);
+  const byStore = {}, errors = {};
+  results.forEach(r => { byStore[r.store] = r.orders.length; if (r.error) errors[r.store] = r.error; });
+  res.json({ orders, count: orders.length, byStore, errors, fetched: new Date().toISOString() });
+});
+
 app.get('/api/ebay/listings', requireAuth, async (req, res) => {
-  if (!process.env.TRADING_API_TOKEN) {
-    return res.status(503).json({ error: 'eBay API not configured' });
-  }
+  const results = await Promise.all(STORES.map(async s => {
+    if (!storeConfigured(s.key)) return { store: s.key, listings: [], error: `not configured: missing ${missingStoreVars(s.key).join(', ')}` };
+    try { return { store: s.key, listings: await fetchStoreListings(s.key) }; }
+    catch (e) { return { store: s.key, listings: [], error: e.message }; }
+  }));
+  const listings = results.flatMap(r => r.listings);
+  const byStore = {}, errors = {};
+  results.forEach(r => { byStore[r.store] = r.listings.length; if (r.error) errors[r.store] = r.error; });
+  res.json({ listings, count: listings.length, byStore, errors, fetched: new Date().toISOString() });
+});
+
+// ── Per-store eBay routes (isolation + cross-contamination verification) ────────
+app.get('/api/ebay/:store/health', requireAuth, async (req, res) => {
+  if (!getStore(req.params.store)) return res.status(404).json({ error: `unknown store '${req.params.store}'` });
+  res.json(await fetchStoreHealth(req.params.store));
+});
+
+app.get('/api/ebay/:store/listings', requireAuth, async (req, res) => {
+  const s = getStore(req.params.store);
+  if (!s) return res.status(404).json({ error: `unknown store '${req.params.store}'` });
+  if (!storeConfigured(s.key)) return res.status(503).json({ error: `store '${s.key}' not configured: missing ${missingStoreVars(s.key).join(', ')}` });
   try {
-    let   page    = 1;
-    const listings = [];
+    const listings = await fetchStoreListings(s.key);
+    res.json({ store: s.key, listings, count: listings.length, fetched: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
-    while (true) {
-      const xml = await ebayCall('GetMyeBaySelling', `
-        <ActiveList>
-          <Include>true</Include>
-          <IncludeNotes>false</IncludeNotes>
-          <Pagination>
-            <EntriesPerPage>200</EntriesPerPage>
-            <PageNumber>${page}</PageNumber>
-          </Pagination>
-        </ActiveList>
-        <HideVariations>false</HideVariations>
-      `);
-
-      const ack = parseXmlValue(xml, 'Ack');
-      if (ack !== 'Success' && ack !== 'Warning') {
-        const err = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage');
-        throw new Error(err || 'eBay API error');
-      }
-
-      const itemBlocks = parseXmlAll(xml, 'ItemID').length
-        ? parseXmlAll(xml, 'Item')
-        : [];
-
-      for (const block of itemBlocks) {
-        listings.push({
-          itemId:  parseXmlValue(block, 'ItemID'),
-          sku:     parseXmlValue(block, 'SKU') || parseXmlValue(block, 'SellerSKU'),
-          title:   parseXmlValue(block, 'Title'),
-          price:   parseFloat(parseXmlValue(block, 'CurrentPrice') || parseXmlValue(block, 'StartPrice') || '0'),
-          qty:     parseInt(parseXmlValue(block, 'QuantityAvailable') || parseXmlValue(block, 'Quantity') || '0'),
-          url:     parseXmlValue(block, 'ViewItemURL'),
-        });
-      }
-
-      const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
-      if (page >= totalPages || itemBlocks.length === 0) break;
-      page++;
-      if (page > 50) break; // safety cap — 10,000 listings max
-    }
-
-    res.json({ listings, count: listings.length, fetched: new Date().toISOString() });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+app.get('/api/ebay/:store/orders', requireAuth, async (req, res) => {
+  const s = getStore(req.params.store);
+  if (!s) return res.status(404).json({ error: `unknown store '${req.params.store}'` });
+  if (!storeConfigured(s.key)) return res.status(503).json({ error: `store '${s.key}' not configured: missing ${missingStoreVars(s.key).join(', ')}` });
+  try {
+    const days = parseInt(req.query.days || '90');
+    const orders = await fetchStoreOrders(s.key, days);
+    res.json({ store: s.key, orders, count: orders.length, fetched: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Stats ─────────────────────────────────────────────────────────────────────

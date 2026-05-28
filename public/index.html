@@ -217,7 +217,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
   <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">eBay Integration</div>
   <div class="g2" style="margin-bottom:22px">
-    <div class="card" id="ebay-status-card"><div class="loading">Checking eBay…</div></div>
+    <div id="ebay-status-card" style="display:grid;gap:12px;align-content:start"><div class="card"><div class="loading">Checking eBay…</div></div></div>
     <div class="card"><div class="sl" style="margin-bottom:8px">Quick Import</div><p style="font-size:12px;color:var(--muted);margin-bottom:12px">Import eBay data from a CSV export from Seller Hub.</p><button class="btn btn-s" onclick="navigate('ebay')">Go to Orders →</button></div>
   </div>
   <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">Recent Moves</div>
@@ -359,7 +359,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterOrderStatus('Completed',this)">Completed</button>
     <button class="tab" onclick="filterOrderStatus('Cancelled',this)">Cancelled</button>
   </div>
-  <div class="card"><div class="tw"><table><thead><tr><th>Order ID</th><th>Buyer</th><th>Item</th><th>SKU</th><th>Total</th><th>Date</th><th>Status</th></tr></thead><tbody id="orders-table"><tr><td colspan="7" class="loading">No orders yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Store</th><th>Order ID</th><th>Buyer</th><th>Item</th><th>SKU</th><th>Total</th><th>Date</th><th>Status</th></tr></thead><tbody id="orders-table"><tr><td colspan="8" class="loading">No orders yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
 </div>
 
 <!-- ═══════ LISTINGS ═══════ -->
@@ -384,7 +384,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterListingStock('stock',this)">In Stock</button>
     <button class="tab" onclick="filterListingStock('zero',this)">No Stock</button>
   </div>
-  <div class="card"><div class="tw"><table><thead><tr><th>SKU</th><th>Title</th><th>Price</th><th>Qty</th><th>Link</th></tr></thead><tbody id="listings-table"><tr><td colspan="5" class="loading">No listings yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Store</th><th>SKU</th><th>Title</th><th>Price</th><th>Qty</th><th>Link</th></tr></thead><tbody id="listings-table"><tr><td colspan="6" class="loading">No listings yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
   <div style="margin-top:12px;font-size:12px;color:var(--muted);text-align:center" id="listings-showing"></div>
 </div>
 
@@ -449,7 +449,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 
   <!-- Stat cards -->
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px" id="health-cards">
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:20px" id="health-cards">
     <div class="card" style="border-left:3px solid var(--success)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><div class="sl">Matched</div><div class="sv" style="color:var(--success)" id="h-matched">–</div></div>
@@ -474,6 +474,12 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
         <div style="font-size:22px">🚨</div>
       </div>
     </div>
+    <div class="card" style="border-left:3px solid var(--err)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">Cross-listed</div><div class="sv" style="color:var(--err)" id="h-cross">–</div></div>
+        <div style="font-size:22px">🔀</div>
+      </div>
+    </div>
     <div class="card" style="border-left:3px solid var(--brand)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><div class="sl">Staging</div><div class="sv" style="color:var(--brand)" id="h-staging">–</div></div>
@@ -489,6 +495,11 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <div class="sb">
     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg>
     <input type="text" placeholder="Search by SKU, title, serial, or location…" oninput="filterHealth(this.value)">
+    <select onchange="filterHealthStore(this.value)" style="margin-left:auto;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12px">
+      <option value="all">All stores</option>
+      <option value="dynatrack">Dynatrack</option>
+      <option value="autolumen">AutoLumen</option>
+    </select>
   </div>
 
   <div class="tabs" id="health-tabs">
@@ -497,6 +508,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterHealthStatus('eBay Only',this)">eBay Only</button>
     <button class="tab" onclick="filterHealthStatus('WMS Only',this)">WMS Only</button>
     <button class="tab" onclick="filterHealthStatus('Duplicate',this)">Duplicate</button>
+    <button class="tab" onclick="filterHealthStatus('Cross-listed',this)">Cross-listed</button>
   </div>
 
   <div class="card" style="padding:0">
@@ -723,16 +735,21 @@ async function loadDashboard() {
     }
     setSynced();
 
-    // Check eBay
+    // Check eBay — one independent status card per store, rendered from the per-store health array
     var ebay = await api('/ebay/health');
-    document.getElementById('ebay-status-card').innerHTML = ebay.connected
-      ? '<div class="sl" style="margin-bottom:6px">eBay Trading API</div>'
-        + '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">'
-        + '<span class="sync-dot"></span>'
-        + '<span style="font-size:13px;color:var(--success);font-weight:600">Connected · dynatrack</span></div>'
-        + '<button class="btn btn-p" style="font-size:12px;padding:6px 12px" onclick="syncEbayNow()">Sync Live Data Now</button>'
-      : '<div class="sl" style="margin-bottom:6px">eBay Trading API</div>'
-        + '<div style="font-size:12px;color:var(--muted)">' + ebay.message + '</div>';
+    var ebayStores = ebay.stores || [];
+    document.getElementById('ebay-status-card').innerHTML = ebayStores.length
+      ? ebayStores.map(function(s) {
+          return '<div class="card">'
+            + '<div class="sl" style="margin-bottom:6px">' + s.label + ' · eBay Trading API</div>'
+            + (s.connected
+                ? '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px"><span class="sync-dot"></span>'
+                  + '<span style="font-size:13px;color:var(--success);font-weight:600">Connected</span></div>'
+                : '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">' + s.message + '</div>')
+            + '<button class="btn btn-p" style="font-size:12px;padding:6px 12px" onclick="syncStore(\'' + s.key + '\')">Sync ' + s.label + '</button>'
+            + '</div>';
+        }).join('')
+      : '<div class="card"><div class="sl" style="margin-bottom:6px">eBay Trading API</div><div style="font-size:12px;color:var(--muted)">No stores configured</div></div>';
   } catch(e) { setSyncErr(); showToast('DB error: ' + e.message, true); }
 }
 
@@ -1041,32 +1058,46 @@ async function printLabel() {
 // ═══════════════════════════════════════════════════════
 //  EBAY LIVE SYNC
 // ═══════════════════════════════════════════════════════
+// ── Store display helpers (multi-store) ──────────────────────────────────────
+function storeLabel(key) { var m = { dynatrack:'Dynatrack', autolumen:'AutoLumen' }; return m[key] || (key || '–'); }
+function storeBadge(key) { var cls = key === 'dynatrack' ? 'bg-b' : (key === 'autolumen' ? 'bg-w' : 'bg-e'); return '<span class="badge ' + cls + '">' + storeLabel(key) + '</span>'; }
+function storeCountLabel(byStore) { byStore = byStore || {}; var parts = Object.keys(byStore).map(function(k){ return storeLabel(k) + ' ' + byStore[k]; }); return parts.length ? parts.join(' · ') : '–'; }
+
+// Map server records → client shape, ALWAYS preserving the `store` tag.
+function mapOrder(o) {
+  return {
+    store:  o.store || '',
+    id:     o.id,
+    buyer:  o.buyer,
+    status: (o.status === 'Complete' || o.status === 'Completed') ? 'Completed' : o.status,
+    total:  o.total,
+    date:   o.date ? new Date(o.date).toLocaleDateString('en-AU') : '',
+    title:  o.items && o.items[0] ? o.items[0].title : '',
+    sku:    o.items && o.items[0] ? o.items[0].sku   : '',
+    items:  o.items || [],
+  };
+}
+function mapListing(l) {
+  return { store: l.store || '', sku: l.sku, title: l.title, price: l.price, qty: l.qty, url: l.url || '#' };
+}
+
 async function syncEbayNow() {
   await Promise.all([syncEbayOrders(), syncEbayListings()]);
 }
 
+// Sync ALL stores. The combined endpoint returns every store's data (already tagged),
+// so a full replace is correct here (it is NOT a single-store slice).
 async function syncEbayOrders() {
   showToast('Fetching live eBay orders…');
   setSyncing();
   try {
     var r = await api('/ebay/orders?days=90');
-    ORDERS = r.orders.map(function(o) {
-      return {
-        id:     o.id,
-        buyer:  o.buyer,
-        status: o.status === 'Complete' || o.status === 'Completed' ? 'Completed' : o.status,
-        total:  o.total,
-        date:   o.date ? new Date(o.date).toLocaleDateString('en-AU') : '',
-        title:  o.items && o.items[0] ? o.items[0].title : '',
-        sku:    o.items && o.items[0] ? o.items[0].sku   : '',
-        items:  o.items || [],
-      };
-    });
+    ORDERS = (r.orders || []).map(mapOrder);
     renderOrders();
     setSynced();
     showToast('Synced ' + ORDERS.length + ' orders from eBay');
     document.getElementById('ebay-orders-status').textContent =
-      'dynatrack · Live · ' + ORDERS.length + ' orders · Synced ' + new Date().toLocaleTimeString('en-AU');
+      storeCountLabel(r.byStore) + ' · Live · ' + ORDERS.length + ' orders · Synced ' + new Date().toLocaleTimeString('en-AU');
   } catch(e) {
     setSyncErr();
     showToast('eBay orders sync failed: ' + e.message, true);
@@ -1078,23 +1109,42 @@ async function syncEbayListings() {
   setSyncing();
   try {
     var r = await api('/ebay/listings');
-    ALL_LISTINGS = r.listings.map(function(l) {
-      return {
-        sku:   l.sku,
-        title: l.title,
-        price: l.price,
-        qty:   l.qty,
-        url:   l.url || '#',
-      };
-    });
+    ALL_LISTINGS = (r.listings || []).map(mapListing);
     renderListings();
     setSynced();
     showToast('Synced ' + ALL_LISTINGS.length + ' listings from eBay');
     document.getElementById('listings-sub').textContent =
-      ALL_LISTINGS.length + ' live listings · dynatrack · Synced ' + new Date().toLocaleTimeString('en-AU');
+      ALL_LISTINGS.length + ' live listings · ' + storeCountLabel(r.byStore) + ' · Synced ' + new Date().toLocaleTimeString('en-AU');
   } catch(e) {
     setSyncErr();
     showToast('eBay listings sync failed: ' + e.message, true);
+  }
+}
+
+// Sync ONE store's slice (per-store dashboard button).
+// CRITICAL: replace only THIS store's entries — filter the array by store tag, then concat
+// the fresh records. NEVER reassign the whole array (e.g. ORDERS = newData /
+// ALL_LISTINGS = newData) — that would silently wipe the OTHER store's data.
+async function syncStore(key) {
+  showToast('Syncing ' + storeLabel(key) + '…');
+  setSyncing();
+  try {
+    var res = await Promise.all([
+      api('/ebay/' + key + '/orders?days=90'),
+      api('/ebay/' + key + '/listings'),
+    ]);
+    var ord = res[0], lst = res[1];
+    // filter-out-this-store then concat — do NOT reassign the array (would wipe the other store)
+    ORDERS       = ORDERS.filter(function(o){ return o.store !== key; }).concat((ord.orders || []).map(mapOrder));
+    ALL_LISTINGS = ALL_LISTINGS.filter(function(l){ return l.store !== key; }).concat((lst.listings || []).map(mapListing));
+    renderOrders();
+    renderListings();
+    setSynced();
+    showToast('Synced ' + storeLabel(key) + ': ' + (ord.count || 0) + ' orders, ' + (lst.count || 0) + ' listings');
+    loadDashboard();
+  } catch(e) {
+    setSyncErr();
+    showToast('Sync ' + storeLabel(key) + ' failed: ' + e.message, true);
   }
 }
 
@@ -1175,7 +1225,7 @@ function importListingsCSV(input) {
 function renderOrders() {
   var data = ORDERS;
   if (orderStatus !== 'all') data = data.filter(function(o){ return o.status === orderStatus; });
-  if (orderFilter) { var q = orderFilter.toLowerCase(); data = data.filter(function(o){ return (o.id+o.buyer+o.sku+o.title).toLowerCase().indexOf(q) >= 0; }); }
+  if (orderFilter) { var q = orderFilter.toLowerCase(); data = data.filter(function(o){ return (o.id+o.buyer+o.sku+o.title+(o.store||'')).toLowerCase().indexOf(q) >= 0; }); }
   var completed = ORDERS.filter(function(o){ return o.status !== 'Cancelled'; });
   var rev = completed.reduce(function(s,o){ return s + o.total; }, 0);
   document.getElementById('eo-total').textContent     = ORDERS.length;
@@ -1184,16 +1234,17 @@ function renderOrders() {
   document.getElementById('eo-rev').textContent       = '$' + rev.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',');
   var show = data.slice(0, 300);
   var tb = document.getElementById('orders-table');
-  if (!ORDERS.length) { tb.innerHTML = '<tr><td colspan="7" class="loading">No orders — import a CSV from eBay Seller Hub</td></tr>'; return; }
+  if (!ORDERS.length) { tb.innerHTML = '<tr><td colspan="8" class="loading">No orders — import a CSV from eBay Seller Hub</td></tr>'; return; }
   tb.innerHTML = show.map(function(o) {
-    return '<tr><td class="mono" style="color:var(--text)">' + o.id + '</td><td>' + o.buyer + '</td>'
+    return '<tr><td>' + storeBadge(o.store) + '</td>'
+      + '<td class="mono" style="color:var(--text)">' + o.id + '</td><td>' + o.buyer + '</td>'
       + '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + o.title + '</td>'
       + '<td class="mono">' + o.sku + '</td>'
       + '<td class="mono" style="color:var(--warn)">$' + o.total.toFixed(2) + '</td>'
       + '<td class="mono">' + o.date + '</td>'
       + '<td><span class="badge ' + (o.status === 'Cancelled' ? 'bg-e' : 'bg-s') + '">' + o.status + '</span></td></tr>';
   }).join('');
-  if (data.length > 300) tb.insertAdjacentHTML('beforeend', '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:12px">Showing 300 of ' + data.length + '</td></tr>');
+  if (data.length > 300) tb.insertAdjacentHTML('beforeend', '<tr><td colspan="8" style="color:var(--muted);text-align:center;padding:12px">Showing 300 of ' + data.length + '</td></tr>');
 }
 
 function filterOrders(v) { orderFilter = v; renderOrders(); }
@@ -1203,18 +1254,20 @@ function renderListings() {
   var data = ALL_LISTINGS;
   if (listingStock === 'stock') data = data.filter(function(l){ return l.qty > 0; });
   else if (listingStock === 'zero') data = data.filter(function(l){ return l.qty === 0; });
-  if (listingFilter) { var q = listingFilter.toLowerCase(); data = data.filter(function(l){ return (l.sku+l.title).toLowerCase().indexOf(q) >= 0; }); }
-  document.getElementById('listings-sub').textContent = ALL_LISTINGS.length + ' listings · dynatrack';
+  if (listingFilter) { var q = listingFilter.toLowerCase(); data = data.filter(function(l){ return (l.sku+l.title+(l.store||'')).toLowerCase().indexOf(q) >= 0; }); }
+  var byStore = {}; ALL_LISTINGS.forEach(function(l){ var k = l.store || '–'; byStore[k] = (byStore[k]||0) + 1; });
+  document.getElementById('listings-sub').textContent = ALL_LISTINGS.length + ' listings · ' + storeCountLabel(byStore);
   var show = data.slice(0, 300);
   document.getElementById('listings-table').innerHTML = show.length
     ? show.map(function(l) {
-        return '<tr><td class="mono" style="color:var(--brand)">' + (l.sku||'–') + '</td>'
+        return '<tr><td>' + storeBadge(l.store) + '</td>'
+          + '<td class="mono" style="color:var(--brand)">' + (l.sku||'–') + '</td>'
           + '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + l.title + '</td>'
           + '<td class="mono" style="color:var(--warn)">$' + l.price + '</td>'
           + '<td class="mono" style="color:' + (l.qty>0?'var(--success)':'var(--muted)') + '">' + l.qty + '</td>'
           + '<td><a href="' + l.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View ↗</a></td></tr>';
       }).join('')
-    : '<tr><td colspan="5" class="loading">No listings match</td></tr>';
+    : '<tr><td colspan="6" class="loading">No listings match</td></tr>';
   document.getElementById('listings-showing').textContent = 'Showing ' + show.length + ' of ' + data.length + ' listings';
 }
 
@@ -1318,6 +1371,7 @@ async function exportCSV(type) {
 var healthData       = [];
 var healthFilter     = '';
 var healthStatusFilter = 'all';
+var healthStoreFilter  = 'all';
 
 async function loadInventoryHealth() {
   setSyncing();
@@ -1344,18 +1398,19 @@ async function loadInventoryHealth() {
       return (sku || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
     }
 
-    var ebayBySku = {};
-    var ebayByRawSku = {};
+    // eBay: normalized key → { stores:{<storeKey>:bestListing}, best:listing } — UNION of all stores.
+    // Tracking presence per store is what enables the Cross-listed (oversell-risk) bucket.
+    var ebayByKey = {};
     ALL_LISTINGS.forEach(function(l) {
       var raw = (l.sku || '').trim().toUpperCase();
+      if (!raw) return;
       var key = normalizeSkuKey(raw);
-      if (raw) {
-        ebayByRawSku[raw] = l;
-        // Keep the listing with highest qty if multiple normalize to same key
-        if (!ebayBySku[key] || l.qty > (ebayBySku[key].qty || 0)) {
-          ebayBySku[key] = l;
-        }
-      }
+      var store = l.store || 'unknown';
+      if (!ebayByKey[key]) ebayByKey[key] = { stores: {}, best: null };
+      var rec = ebayByKey[key];
+      // keep the highest-qty listing per store for this key
+      if (!rec.stores[store] || l.qty > (rec.stores[store].qty || 0)) rec.stores[store] = l;
+      if (!rec.best || l.qty > (rec.best.qty || 0)) rec.best = l;
     });
 
     // WMS: normalized serial → array of items
@@ -1367,44 +1422,50 @@ async function loadInventoryHealth() {
     });
 
     // ── Classify every unique SKU/serial ──────────────
-    var allKeys = new Set(Object.keys(ebayBySku).concat(Object.keys(wmsBySku)));
+    var allKeys = new Set(Object.keys(ebayByKey).concat(Object.keys(wmsBySku)));
     var rows = [];
 
     allKeys.forEach(function(key) {
-      var ebay   = ebayBySku[key] || null;
-      var wmsArr = wmsBySku[key]  || [];
+      var rec    = ebayByKey[key] || null;
+      var ebay   = rec ? rec.best : null;
+      var stores = rec ? Object.keys(rec.stores) : [];
+      var wmsArr = wmsBySku[key] || [];
       var status;
 
-      if (ebay && wmsArr.length > 1)     status = 'Duplicate';
+      // Cross-listed = active listing on >=2 stores. Shared inventory + unique serial means
+      // the same item live on both stores can oversell — highest-priority, distinct flag.
+      if (ebay && stores.length >= 2)       status = 'Cross-listed';
+      else if (ebay && wmsArr.length > 1)   status = 'Duplicate';
       else if (ebay && wmsArr.length === 1) status = 'Matched';
       else if (ebay && wmsArr.length === 0) status = 'eBay Only';
-      else                                   status = 'WMS Only';
+      else                                  status = 'WMS Only';
 
-      rows.push({ key, status, ebay, wms: wmsArr });
+      rows.push({ key, status, ebay, stores, wms: wmsArr });
     });
 
     healthData = rows;
 
     // ── Stats ──────────────────────────────────────────
-    var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0 };
+    var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0, 'Cross-listed':0 };
     rows.forEach(function(r) { counts[r.status] = (counts[r.status]||0) + 1; });
 
     document.getElementById('h-matched').textContent   = (counts['Matched']   ||0).toLocaleString();
     document.getElementById('h-ebay-only').textContent = (counts['eBay Only'] ||0).toLocaleString();
     document.getElementById('h-wms-only').textContent  = (counts['WMS Only']  ||0).toLocaleString();
     document.getElementById('h-duplicate').textContent = (counts['Duplicate'] ||0).toLocaleString();
+    document.getElementById('h-cross').textContent     = (counts['Cross-listed'] ||0).toLocaleString();
     document.getElementById('h-staging').textContent   = stagedItems.length.toLocaleString();
 
-    // Update tab labels
+    // Update tab labels (order MUST match the #health-tabs DOM order, incl. Cross-listed)
     var tabs = document.querySelectorAll('#health-tabs .tab');
-    var labels = ['All ('+rows.length+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+(counts['WMS Only']||0)+')', 'Duplicate ('+counts['Duplicate']+')'];
+    var labels = ['All ('+rows.length+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+(counts['WMS Only']||0)+')', 'Duplicate ('+counts['Duplicate']+')', 'Cross-listed ('+counts['Cross-listed']+')'];
     tabs.forEach(function(t,i){ if(labels[i]) t.textContent = labels[i]; });
 
     var now = new Date().toLocaleString('en-AU');
     document.getElementById('health-sync-label').textContent = 'eBay listings vs WMS active shelf inventory · Last sync: ' + now;
     document.getElementById('health-summary').textContent =
-      'Comparing ' + Object.keys(ebayBySku).length.toLocaleString() + ' eBay listings with SKUs against ' +
-      storedItems.length.toLocaleString() + ' active shelf items. Staging items (' + stagedItems.length + ') are excluded from health buckets.';
+      'Comparing ' + Object.keys(ebayByKey).length.toLocaleString() + ' eBay SKUs (union of all stores) against ' +
+      storedItems.length.toLocaleString() + ' active shelf items. Cross-listed = same SKU active on ≥2 stores (oversell risk). Staging items (' + stagedItems.length + ') are excluded from health buckets.';
 
     renderHealthTable();
     setSynced();
@@ -1420,6 +1481,11 @@ function renderHealthTable() {
   // Filter by status
   if (healthStatusFilter !== 'all') {
     data = data.filter(function(r) { return r.status === healthStatusFilter; });
+  }
+
+  // Filter by store — keep rows whose eBay listing(s) involve the selected store
+  if (healthStoreFilter !== 'all') {
+    data = data.filter(function(r) { return (r.stores || []).indexOf(healthStoreFilter) >= 0; });
   }
 
   // Filter by search
@@ -1443,9 +1509,10 @@ function renderHealthTable() {
 
   tb.innerHTML = show.map(function(r) {
     // Status badge
-    var badgeCls = r.status === 'Matched'   ? 'bg-s' :
-                   r.status === 'Duplicate' ? 'bg-e' :
-                   r.status === 'eBay Only' ? 'bg-w' : 'bg-w';
+    var badgeCls = r.status === 'Matched'      ? 'bg-s' :
+                   r.status === 'Duplicate'    ? 'bg-e' :
+                   r.status === 'Cross-listed' ? 'bg-e' :
+                   r.status === 'eBay Only'    ? 'bg-w' : 'bg-w';
     var badge = '<span class="badge ' + badgeCls + '">' + r.status + '</span>';
 
     // eBay column
@@ -1454,7 +1521,9 @@ function renderHealthTable() {
       var urlPart = r.ebay.url && r.ebay.url !== '#'
         ? '<br><a href="' + r.ebay.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View on eBay ↗</a>'
         : '';
-      ebayCol = '<span class="mono" style="color:var(--brand)">' + r.ebay.sku + '</span>'
+      var storeTags = (r.stores || []).map(storeBadge).join(' ');
+      ebayCol = (storeTags ? storeTags + '<br>' : '')
+        + '<span class="mono" style="color:var(--brand)">' + r.ebay.sku + '</span>'
         + ' · qty ' + r.ebay.qty
         + ' · <span style="color:var(--success);font-weight:600">$' + r.ebay.price + '</span>'
         + '<br><span style="font-size:12px;color:var(--text2)">' + (r.ebay.title||'').substring(0,55) + (r.ebay.title && r.ebay.title.length>55?'…':'') + '</span>'
@@ -1483,6 +1552,7 @@ function renderHealthTable() {
 }
 
 function filterHealth(v) { healthFilter = v; renderHealthTable(); }
+function filterHealthStore(v) { healthStoreFilter = v; renderHealthTable(); }
 
 function filterHealthStatus(s, btn) {
   document.querySelectorAll('#health-tabs .tab').forEach(function(t){ t.classList.remove('active'); });
@@ -1495,13 +1565,15 @@ function exportHealthCSV() {
   if (!healthData.length) { showToast('Run a sync first', true); return; }
   var rows = healthData;
   if (healthStatusFilter !== 'all') rows = rows.filter(function(r){ return r.status === healthStatusFilter; });
-  var csv = 'SKU,Status,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location\n';
+  if (healthStoreFilter !== 'all') rows = rows.filter(function(r){ return (r.stores||[]).indexOf(healthStoreFilter) >= 0; });
+  var csv = 'SKU,Status,Stores,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location\n';
   rows.forEach(function(r) {
     var wmsSerial = r.wms.map(function(i){ return i.serial; }).join(';');
     var wmsLoc    = r.wms.map(function(i){ return i.location||''; }).join(';');
     csv += [
       r.key,
       r.status,
+      (r.stores || []).join(';'),
       '"' + (r.ebay ? (r.ebay.title||'').replace(/"/g,"'") : '') + '"',
       r.ebay ? r.ebay.price : '',
       r.ebay ? r.ebay.qty   : '',
