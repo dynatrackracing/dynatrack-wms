@@ -11,6 +11,30 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 19:25 UTC — Fix #4: eBay health card "Unknown error" → card now GREEN (✅ CLOSED)
+
+**Single deliverable:** fix the Dashboard eBay health-card "Unknown error" (follow-up #4). Diagnose-first, approved, then patched. **Health route only** — `ebayCall`, the orders/listings routes, `db/`, and the frontend were untouched.
+
+### Root cause (confirmed this session)
+- The health probe called **`GeteBayOfficialTime`**, which returns an **HTTP 503 `text/html` "Service Unavailable – Zero size object"** gateway page — **no `<Ack>`, no error envelope**. `ebayCall` discards `res.statusCode` (resolves the body as a string), and the route's parser found no `<Ack>`/`<LongMessage>`/`<ShortMessage>`, so it fell through to the literal **`'Unknown error'`** fallback (server.js:396 old). The frontend (index.html:735) just renders `ebay.message` verbatim — so "Unknown error" was the *server's* string, not a frontend default.
+- **Not a credential issue:** `GeteBayOfficialTime`, `GetOrders`, `GetMyeBaySelling` all share the same token + headers via `ebayCall`/`ebayHeaders`. `GetMyeBaySelling` returns `Ack=Success` in prod (verified) — so the 503 was **specific to `GeteBayOfficialTime`**, not a broad gateway outage or the token.
+
+### Fix (Decision: clean `GetMyeBaySelling` swap; no numeric-HTTP-code variant)
+- `/api/ebay/health` now probes with **`GetMyeBaySelling`** (1 entry — the *same* call the listings sync uses, **no buyer PII** unlike `GetOrders`), so the card reflects real sync capability.
+- A non-XML response (no `<Ack>`) now returns an **honest** message ("non-API response / likely HTTP 503/maintenance page; live sync may still be working") instead of "Unknown error". `Ack=Failure` still surfaces eBay's `LongMessage`.
+- Dropped the inaccurate "· Australia site" from the connected message (SITEID `0` = US; approved Rule-B flag).
+- Skipped temp-logging capture (Decision 1): `GetMyeBaySelling` was already known-good in prod, and the fix is self-diagnosing — avoided an extra deploy/revert and any PII risk.
+
+### Verify (Rule 17 — after Railway auto-deploy)
+- Public `/api/health` → 200. Authenticated `/api/ebay/health` (logged into prod via **Railway-injected** `WMS_*` creds through `railway run`, so **no secrets printed**, no temp logging) → **`{"connected":true,"message":"eBay Trading API connected"}`**. New code confirmed live (message no longer contains "Australia"/"Unknown error").
+- **Card is GREEN.** Frontend unchanged → `connected:true` renders the green "Connected · dynatrack" state. **eBay sync confirmed healthy.**
+
+**Files touched:** `server.js` (`/api/ebay/health` route only), `SNAPSHOT_ROUTES.md` (Rule 38 regen — health-route row + helper note + line anchors). Commit **`741b289`**, pushed to `main`. No schema/frontend changes.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (~18 mo) · #8 broader Drive-folder cleanup (incl. refreshing the Drive stubs to the new `HAWKER_` filenames). **#4 CLOSED this session** (#1/#6/#9 closed earlier; #7 dropped).
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200, DB connected, eBay card green.
+
 ## 18:08 UTC — Rename memory files to `HAWKER_`-prefix + reconcile diverged main + fix phantom sync stamp
 
 **Single deliverable:** rename this project's memory files to `HAWKER_`-prefixed names (permanent disambiguation from the *other* eBay repo) and update every live internal reference. Documentation/memory only — `server.js`, `public/index.html`, `db/` untouched. Required a reconcile first (the repo was diverged on entry).
