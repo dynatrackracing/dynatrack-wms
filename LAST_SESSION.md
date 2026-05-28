@@ -6,6 +6,47 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 02:39 UTC — Laptop verification (follow-up #9 ✅): first clone on laptop, round-trip proven
+
+**Machine:** Laptop (computer `RYAN`, user `ryan\atenr`). **Single deliverable:** verify this laptop is set up to work on HawkerWMS exactly like the desktop — pull/push the same GitHub repo, no dependency on the abandoned Drive folder. Diagnostic-first; inventory reported and approved before any change. No app code touched; no snapshot regeneration.
+
+### ⚠️ Useful fact for future sessions — laptop path is the SAME as desktop
+This laptop's user profile is **`C:\Users\atenr`** — *identical* to the desktop, not a different path. So the canonical repo path `C:\Users\atenr\dynatrack-wms-repo` (Rule 31) is correct on **both** machines; no per-machine path divergence. (`whoami` = `ryan\atenr`, `%USERPROFILE%` = `C:\Users\atenr`, computer name `RYAN`.) Future sessions on this laptop need not re-discover this.
+
+### Part 1 — Inventory (read-only, reported before touching anything)
+1. **WHO/WHERE** — `ryan\atenr`, `%USERPROFILE%`=`C:\Users\atenr`, computer `RYAN`. (Same path as desktop — see note above.)
+2. **Git** — `git version 2.54.0.windows.1` at `C:\Program Files\Git\cmd\git.exe`. ✅
+3. **Existing clone** — **none.** All four candidate paths absent (`%USERPROFILE%\dynatrack-wms-repo`, `%USERPROFILE%\dynatrack-wms`, `C:\dynatrack-wms-repo`, `C:\Users\atenr\dynatrack-wms-repo`). Clean first-time-setup case.
+4. **Stale Drive folder** — `G:\My Drive\dynatrack-wms\` exists; the four memory files are all **MOVED-stubs** (Drive has synced the 2026-05-28 abandonment from the desktop — good). The two Drive sync-conflict copies `LAST_SESSION (1).md` / `CHANGELOG (1).md` are **also stubs** (harmless). Full stale project copy (server.js, db/, public/, hawker-import.sql, …) still present — that's follow-up #8, untouched this session. **Did not edit anything in Drive.**
+5. **GitHub auth** — system gitconfig `credential.helper=manager` (GCM); binary at `C:\Program Files\Git\mingw64\bin\git-credential-manager.exe`. Git identity `dynatrackracing` / `dynatrackracingnc@gmail.com`. No PAT involved.
+6. **Claude Code settings** — `C:\Users\atenr\.claude\settings.json` = `{"theme":"dark","permissions":{"defaultMode":"auto"}}`. Auto Mode present and correctly nested (matches the 2026-05-27 13:30 UTC laptop session's merge). No repair needed.
+7. **Node/npm** — `node v18.20.4`, `npm 10.7.0`. Reported only; app not run.
+
+### Part 2 — Remediation (after architect go-ahead)
+- **Cloned** `https://github.com/dynatrackracing/dynatrack-wms.git` → `C:\Users\atenr\dynatrack-wms-repo`. **GCM auth succeeded with NO browser prompt** — credentials were already cached on this machine, so the clone ran non-interactively.
+- **Verified state:** remote `origin` → `github.com/dynatrackracing/dynatrack-wms` (fetch+push), branch **main**, HEAD **`fe4fa63`** ("Stub abandoned Drive memory files + Rule 39 + CLAUDE.md item L" — the desktop's 02:10 UTC push), working tree **clean / up to date with origin/main**. Fresh clone already at the desktop's latest, so a separate `git pull` was redundant.
+- **Belatedly satisfied the mandatory first-read** (couldn't earlier — the real docs only existed in GitHub until the clone): read CLAUDE_RULES.md in full (39 rules), LAST_SESSION.md (recent entries), CHANGELOG.md.
+- **Settings (Action D):** no-op — Auto Mode already correct.
+- **Drive (Action E):** no-op — memory files already stubbed (Drive caught up from desktop on its own). Re-checked at session end: still stubs.
+
+### Round trip
+This entry + the CHANGELOG line are the **first laptop→GitHub commit & push**, proving the round trip works in both directions (clone/pull ⇄ push). The desktop will see them on its next `git pull`.
+
+### ⏭ PENDING FOLLOW-UPS (carried forward; #9 now ✅)
+1. **✅ CLOSED (2026-05-28) — Folder consolidation.**
+2. **Hands-on testing** in HawkerWMS before cutover. *(Open.)*
+3. **Final data extract from the paid WMS** before cutover. *(Open.)*
+4. **Dashboard health-check bug** — `GeteBayOfficialTime` 503 → eBay card "Unknown error". *(Open.)*
+5. **eBay token expiration** (~18 months). *(Open.)*
+6. **✅ CLOSED (2026-05-27) — Blank Inventory Health page.**
+7. **~~Google Drive connector~~ — DROPPED** (Rules 36–37).
+8. **Broader Drive-folder cleanup** — stub/delete the remaining stale full project copy in `G:\My Drive\dynatrack-wms\`. *(Open.)*
+9. **✅ CLOSED (2026-05-28) — Laptop verification.** Laptop is set up end-to-end: clone present at `C:\Users\atenr\dynatrack-wms-repo`, on `main`, clean, at `fe4fa63`; Auto Mode set; GCM auth working (clone + this push). No dependency on the abandoned Drive folder.
+
+**Files touched (repo):** `LAST_SESSION.md`, `CHANGELOG.md`. No app code, schema, or snapshots. **Drive:** nothing modified.
+
+**Production status:** unchanged — docs only, nothing deployed beyond the Railway auto-redeploy that any `main` push triggers (no code delta).
+
 ## 02:10 UTC — Stub abandoned Drive memory files + Rule 39 (PK re-upload cadence) + CLAUDE.md item L
 
 **Single deliverable:** documentation/housekeeping — closed two follow-ups (B: stub the abandoned Drive folder; C: add Rule 39). No app code touched; no snapshot regeneration needed.
