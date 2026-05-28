@@ -1386,17 +1386,21 @@ var healthStatusFilter = 'all';
 var healthStoreFilter  = 'all';
 
 async function loadInventoryHealth() {
+  // DIAGNOSTIC — remove after blank-page bug confirmed resolved (counts/shapes only, no PII)
+  console.log('[Inventory Health] render start · listings:', ALL_LISTINGS.length,
+    '· firstListingHasStore:', (ALL_LISTINGS.length ? ('store' in ALL_LISTINGS[0]) : 'n/a'),
+    '· statusFilter:', healthStatusFilter, '· storeFilter:', healthStoreFilter);
   setSyncing();
 
-  if (!ALL_LISTINGS.length) {
-    document.getElementById('health-summary').innerHTML =
-      '⚠ No eBay listings loaded yet — they load into memory on sync and reset on page refresh. ' +
-      '<button class="btn btn-p" style="margin-left:8px" onclick="syncEbayListings().then(loadInventoryHealth)">Sync eBay listings &amp; compare</button>';
-    setSyncErr();
-    return;
-  }
-
   try {
+    if (!ALL_LISTINGS.length) {
+      document.getElementById('health-summary').innerHTML =
+        '⚠ No eBay listings loaded yet — they load into memory on sync and reset on page refresh. ' +
+        '<button class="btn btn-p" style="margin-left:8px" onclick="syncEbayListings().then(loadInventoryHealth)">Sync eBay listings &amp; compare</button>';
+      setSyncErr();
+      return;
+    }
+
     // Pull all WMS items in one go
     var [storedItems, stagedItems] = await Promise.all([
       api('/items?status=STORED&limit=10000'),
@@ -1486,8 +1490,16 @@ async function loadInventoryHealth() {
     renderHealthTable();
     setSynced();
   } catch(e) {
+    // Defensive layer: never leave the Health section truly blank with no signal.
+    console.error('[Inventory Health] render failed:', e);
     setSyncErr();
     showToast('Health sync error: ' + e.message, true);
+    var summaryEl = document.getElementById('health-summary');
+    if (summaryEl) summaryEl.innerHTML =
+      '⚠ Inventory Health failed to render — check the browser Console for details (logged with prefix <span class="mono">[Inventory Health]</span>). ' +
+      '<button class="btn btn-p" style="margin-left:8px" onclick="location.reload()">Reload Page</button>';
+    var tableEl = document.getElementById('health-table');
+    if (tableEl) tableEl.innerHTML = '<tr><td colspan="4" class="loading">Could not render — see Console.</td></tr>';
   }
 }
 
