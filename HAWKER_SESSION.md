@@ -11,6 +11,35 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 21:05 UTC — Rebuild Inventory Health UI to old-WMS layout (multi-store-aware) — frontend only ✅
+
+**Single deliverable:** rebuild the Inventory Health page front-end to the old WMS layout (visual reference `Warehouse_WMS4.html` lives in claude.ai project knowledge — NOT in the repo, reference-only per CLAUDE.md; built from the brief's spec), adapted for HawkerWMS multi-store. **Frontend only** — `public/index.html` only; no `server.js`/`db/`/route changes (the multi-store data layer shipped last session).
+
+### Diagnostic results (Rule 1, reported before building)
+- **Item-detail page: NONE.** `server.js` has `GET /api/items/:serial` (API), but the frontend has **no item-detail page/route** — `/items/:serial` is used only by the scan flow (`handleScan`). → WMS serials render as **plain monospace text, NOT links** (and never to `wms-prod` — the old paid WMS we're replacing).
+- **`store` tag confirmed** present on every `ALL_LISTINGS` entry (from last session's multi-store work).
+- Current page already had (from last session): 4-col table, store badges, filter chips w/ counts, store filter, empty-state Sync button. This session refined it to the full old-WMS layout.
+
+### What was built (UX choices worth noting)
+- **8 stat cards** in a responsive `auto-fit` grid: added **WMS Items** (active shelf count) + **eBay Inventory** (total live listings) in front of Matched / eBay Only / WMS Only / Duplicate / **Cross-listed** / Staging. No per-bucket CSV download icons (architect skipped); the pre-existing single header "Export CSV" button was left untouched.
+- **Header** reworded to spec: "Comparing N eBay listings with SKUs against M active shelf items. Staging items (S) are excluded from health buckets."
+- **Table** (SKU / Status / eBay / WMS), **rows sorted by SKU ascending**:
+  - SKU = normalized key (mono, semibold); Status = colored pill.
+  - eBay col = per-listing block with **inline store badge**, raw eBay SKU, qty, green price, title truncated (full title in `title` attr), View-on-eBay link.
+  - **Cross-listed rows show BOTH stores' listings stacked** (one `listingBlock` per store, each with its own store badge) — the oversell risk is now visually obvious (the whole point of the bucket).
+  - WMS col = plain serial; raw form in parens when it differs from the normalized key; location in small muted text below; **all items stacked for Duplicate**; em-dash for eBay Only.
+- Kept the empty-state Sync button (commit 1838259) and the store filter dropdown. Light theme / existing CSS tokens (translated the old WMS *layout*, not its dark colors — Rule 21).
+
+### Verification (Rule 17)
+- Pushed `a8e2319`; Railway live by ~50s. `/api/health` 200. Served `index.html` contains all new strings: **WMS Items, eBay Inventory, "eBay listings with SKUs", Cross-listed**, the store filter, the empty-state button, and all 6 filter chips. Inline `<script>` compiles clean (`vm`, 0 errors).
+- *(Markup + JS confirmed live; the fully-rendered table is data-driven — Ry can eyeball the Cross-listed two-store rows on a logged-in load. The underlying multi-store data was proven distinct last session.)*
+
+**Files touched:** `public/index.html`, `SNAPSHOT_FRONTEND.md`. No backend.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (two tokens) · #8 broader Drive cleanup · retire legacy un-prefixed `TRADING_API_*` once multi-store proven stable. **Inventory Health UI rebuild: DONE.**
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; new Health UI live.
+
 ## 20:41 UTC — Wire AutoLumen as 2nd eBay store (multi-store layer) — Phase 1 proposal + Phase 2 build, deployed & cross-contamination verified ✅
 
 **Single deliverable:** add AutoLumen as a second eBay store (shared inventory). Two-phase: proposal → architect approval → build. **Touched only `server.js` + `public/index.html` + both snapshots.** No schema, no `db/`, no other routes (Ry's locked decision: store is a property of eBay listings/orders only, never of the physical item).
