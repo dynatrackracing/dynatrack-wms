@@ -4,6 +4,8 @@ Chronological summary of all changes to HawkerWMS. Newest entries at the TOP. Ea
 
 ---
 
+## 2026-05-28 — Stubbed the abandoned Drive memory files (SIX: the four named + the two `(1)` duplicates `LAST_SESSION (1).md` / `CHANGELOG (1).md`) with "MOVED — DO NOT EDIT" pointers to the repo. Added CLAUDE_RULES Rule 39 (project-knowledge re-upload cadence) + CLAUDE.md anti-rogue item L. No app code/schema/snapshots. Deferred new follow-up #8 (broader Drive cleanup — stale full project copy remains) and noted #9 (laptop verification still open).
+
 ## 2026-05-28 — Inventory Health verification (no code change): confirmed the blank-page symptom was already fixed (Option B, commit `1838259`) — present in canonical code + live in prod; `/api/ebay/listings` healthy (no `ebay_listings` table — listings are never persisted); Rule 8 SKU normalization correct in code. Root cause of the repeat brief = stale claude.ai project knowledge. Added CLAUDE.md note that `Warehouse_WMS*.html` in project knowledge are old-paid-WMS snapshots (reference-only, not HawkerWMS source).
 
 ## 2026-05-28 — Folder consolidation (follow-up #1 ✅): moved the four memory files into the git repo root (canonical now `C:\Users\atenr\dynatrack-wms-repo`; Drive folder abandoned). Updated CLAUDE.md (SYNC ARCHITECTURE + anti-rogue K) and CLAUDE_RULES (Rule 31 repo-canonical; Rule 36 memory-in-repo; Rule 37 project-knowledge manual re-upload, supersedes the dropped connector idea; Rule 38 snapshot regen). Generated first SNAPSHOT_ROUTES.md / SNAPSHOT_FRONTEND.md / SNAPSHOT_SCHEMA.md. No app-code/schema changes.

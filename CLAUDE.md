@@ -35,6 +35,8 @@ J. **RY IS NOT A PROGRAMMER.** Do file moves, copies, git operations, deployment
 
 K. **REGENERATE SNAPSHOTS AT SESSION END** when code changed this session. If you touched `server.js`, `public/index.html`, or `db/schema.sql`, regenerate the matching `SNAPSHOT_*.md` before committing (per CLAUDE_RULES rule 38). Snapshots must reflect HEAD — never let them drift.
 
+L. **REMIND THE HUMAN TO RE-UPLOAD PROJECT KNOWLEDGE** at session end if any of the four memory files were touched this session (per CLAUDE_RULES rule 39).
+
 ## WHAT THE USER MEANS WHEN THEY SAY THINGS
 
 - "Make a small fix" = surgical change, do not expand scope

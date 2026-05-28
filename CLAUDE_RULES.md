@@ -112,6 +112,8 @@ These are non-negotiable constraints for HawkerWMS development. Violating any of
 
 38. **Regenerate SNAPSHOTS at session end when code changed.** Maintained snapshots in the repo root: `SNAPSHOT_ROUTES.md` (the `server.js` API surface), `SNAPSHOT_FRONTEND.md` (`public/index.html` pages + functions), `SNAPSHOT_SCHEMA.md` (`db/schema.sql` tables). If a session changed `server.js`, `public/index.html`, or `db/schema.sql`, regenerate the affected snapshot(s) before committing so they reflect HEAD. Snapshots are a fast orientation map for future sessions and must never drift from the code.
 
+39. **Project-knowledge re-upload cadence.** Re-upload the four memory files (`CLAUDE.md`, `CLAUDE_RULES.md`, `LAST_SESSION.md`, `CHANGELOG.md`) to the claude.ai project knowledge **after every session that committed changes to any of them**, OR **weekly at minimum**, whichever is sooner. The web Claude reads project knowledge at chat start; if it's stale, the briefing-room model (Rule 37) silently fails. The human (architect) performs this upload — Claude Code cannot. After a session-end commit, the final step before closing the session is: tell the human "memory files updated this session — re-upload to project knowledge before next web-Claude session."
+
 ---
 
 ## KNOWN TECH DEBT / OPEN ITEMS
