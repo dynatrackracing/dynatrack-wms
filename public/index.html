@@ -41,6 +41,7 @@ nav{position:fixed;top:0;left:0;right:0;height:64px;background:var(--bg2);border
 .sync-dot{width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;flex-shrink:0}
 .sync-dot.busy{background:var(--warn);animation:pulse 1s infinite}
 .sync-dot.err{background:var(--err)}
+.sync-dot.warn{background:var(--warn)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 aside{position:fixed;top:64px;left:0;bottom:0;width:230px;background:var(--bg2);border-right:1px solid var(--border);z-index:90;overflow-y:auto;padding:16px 10px}
 .nl{font-size:10.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:12px 10px 5px}
@@ -628,6 +629,7 @@ async function doLogin() {
     document.getElementById('nav-username').textContent = WMS_USER;
     hideLogin();
     loadDashboard();
+    refreshDbStatus();   // baseline the top indicator on real DB health after sign-in
   } catch(e) {
     err.textContent = e.message;
     err.style.display = 'block';
@@ -674,9 +676,30 @@ function setSynced() {
   document.getElementById('sync-dot').className = 'sync-dot';
   document.getElementById('sync-status').textContent = 'Live';
 }
-function setSyncErr() {
-  document.getElementById('sync-dot').className = 'sync-dot err';
-  document.getElementById('sync-status').textContent = 'DB Error';
+// The top indicator reflects ACTUAL DB health only — driven by /api/health's `db` field.
+// /api/health is public, so it never 401s; a failed eBay/auth/network call must NOT land here.
+async function refreshDbStatus() {
+  var dot = document.getElementById('sync-dot');
+  var txt = document.getElementById('sync-status');
+  try {
+    var r = await fetch('/api/health');
+    var h = r.ok ? await r.json() : null;
+    if (h && h.db === 'connected') { dot.className = 'sync-dot';     txt.textContent = 'Live'; }
+    else if (h)                    { dot.className = 'sync-dot err';  txt.textContent = 'DB Error'; }
+    else                           { dot.className = 'sync-dot err';  txt.textContent = 'Offline'; }
+  } catch(e)                       { dot.className = 'sync-dot err';  txt.textContent = 'Offline'; }
+}
+// Honest failure handler. A 401/session problem shows "Session expired" (amber) — NOT "DB Error".
+// Anything else defers to the REAL DB health (refreshDbStatus): a failed eBay sync with a healthy
+// DB leaves the dot green, because that failure is surfaced via its toast + the per-store cards.
+function setSyncErr(err) {
+  var msg = (err && err.message) || '';
+  if (/session expired|log ?in again|unauthor/i.test(msg)) {
+    document.getElementById('sync-dot').className = 'sync-dot warn';
+    document.getElementById('sync-status').textContent = 'Session expired';
+    return;
+  }
+  refreshDbStatus();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -762,7 +785,7 @@ async function loadDashboard() {
             + '</div>';
         }).join('')
       : '<div class="card"><div class="sl" style="margin-bottom:6px">eBay Trading API</div><div style="font-size:12px;color:var(--muted)">No stores configured</div></div>';
-  } catch(e) { setSyncErr(); showToast('DB error: ' + e.message, true); }
+  } catch(e) { setSyncErr(e); showToast('Dashboard error: ' + e.message, true); }
 }
 
 async function dashSearch(v) {
@@ -849,7 +872,7 @@ async function doMove() {
     setSynced();
     resetScan();
     loadRecentMoves();
-  } catch(e) { setSyncErr(); showToast('Move failed: ' + e.message, true); }
+  } catch(e) { setSyncErr(e); showToast('Move failed: ' + e.message, true); }
   btn.disabled = false;
 }
 
@@ -888,7 +911,7 @@ async function loadLocations() {
     buildZoneTabs();
     renderLocGrid();
     setSynced();
-  } catch(e) { setSyncErr(); showToast('Locations error: ' + e.message, true); }
+  } catch(e) { setSyncErr(e); showToast('Locations error: ' + e.message, true); }
 }
 
 function buildZoneTabs() {
@@ -970,7 +993,7 @@ async function loadInventory(status) {
         + '<td class="mono">' + new Date(i.updated_at).toLocaleDateString('en-AU') + '</td></tr>';
     }).join('');
     setSynced();
-  } catch(e) { setSyncErr(); showToast('Inventory error: ' + e.message, true); }
+  } catch(e) { setSyncErr(e); showToast('Inventory error: ' + e.message, true); }
 }
 
 function filterInvStatus(s, btn) {
@@ -1111,7 +1134,7 @@ async function syncEbayOrders() {
     document.getElementById('ebay-orders-status').textContent =
       storeCountLabel(r.byStore) + ' · Live · ' + ORDERS.length + ' orders · Synced ' + new Date().toLocaleTimeString('en-AU');
   } catch(e) {
-    setSyncErr();
+    setSyncErr(e);
     showToast('eBay orders sync failed: ' + e.message, true);
   }
 }
@@ -1128,7 +1151,7 @@ async function syncEbayListings() {
     document.getElementById('listings-sub').textContent =
       ALL_LISTINGS.length + ' live listings · ' + storeCountLabel(r.byStore) + ' · Synced ' + new Date().toLocaleTimeString('en-AU');
   } catch(e) {
-    setSyncErr();
+    setSyncErr(e);
     showToast('eBay listings sync failed: ' + e.message, true);
   }
 }
@@ -1155,7 +1178,7 @@ async function syncStore(key) {
     showToast('Synced ' + storeLabel(key) + ': ' + (ord.count || 0) + ' orders, ' + (lst.count || 0) + ' listings');
     loadDashboard();
   } catch(e) {
-    setSyncErr();
+    setSyncErr(e);
     showToast('Sync ' + storeLabel(key) + ' failed: ' + e.message, true);
   }
 }
@@ -1307,10 +1330,9 @@ async function loadAdmin() {
     var counts = await api('/moves?limit=1');
     // just used to confirm db alive
   } catch(e) {}
-  // Load move count separately
+  // Load move count separately (via api() so the x-wms-token header is sent — was a bare fetch → 401)
   try {
-    var mc = await fetch('/api/moves?limit=10000');
-    var mj = await mc.json();
+    var mj = await api('/moves?limit=10000');
     document.getElementById('admin-moves').textContent = mj.length.toLocaleString();
   } catch(e) {}
   try {
@@ -1397,7 +1419,7 @@ async function loadInventoryHealth() {
       document.getElementById('health-summary').innerHTML =
         '⚠ No eBay listings loaded yet — they load into memory on sync and reset on page refresh. ' +
         '<button class="btn btn-p" style="margin-left:8px" onclick="syncEbayListings().then(loadInventoryHealth)">Sync eBay listings &amp; compare</button>';
-      setSyncErr();
+      refreshDbStatus();  // empty listings is a normal state, not a DB error — reflect real DB health
       return;
     }
 
@@ -1492,7 +1514,7 @@ async function loadInventoryHealth() {
   } catch(e) {
     // Defensive layer: never leave the Health section truly blank with no signal.
     console.error('[Inventory Health] render failed:', e);
-    setSyncErr();
+    setSyncErr(e);
     showToast('Health sync error: ' + e.message, true);
     var summaryEl = document.getElementById('health-summary');
     if (summaryEl) summaryEl.innerHTML =
@@ -1652,6 +1674,7 @@ document.getElementById('lp-date').textContent = new Date().toLocaleDateString('
         document.getElementById('nav-username').textContent = WMS_USER;
         hideLogin();
         loadDashboard();
+        refreshDbStatus();   // baseline the top indicator on real DB health (/api/health.db)
         return;
       }
     } catch(e) {}
