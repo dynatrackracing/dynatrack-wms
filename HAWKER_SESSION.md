@@ -11,6 +11,30 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 20:07 UTC — Ground-truth verification of #4 (recap-discrepancy check) — #4 confirmed DONE & LIVE; no code change
+
+**Single deliverable:** verify ground truth on follow-up #4 after a prior session died mid-flight (API socket error) and a recap left doubt about whether #4 was actually patched/deployed. **No code touched** — this is a verification + documentation entry only.
+
+### Finding: #4 was genuinely fixed, pushed, and is live. The recap was CORRECT.
+- **Git history (authoritative):** `741b289 Fix #4: eBay health card — probe with GetMyeBaySelling…` exists and touches `server.js`; followed by `fc93ca9` (log) and `d5f028f` (stamp). `HEAD == origin/main == d5f028f`. SYNC STAMP = `fc93ca9 @ 2026-05-28 19:26 UTC` (real, matches the content commit).
+- **Current code:** `/api/ebay/health` (server.js:393) probes with `ebayCall('GetMyeBaySelling', …)` and returns the honest non-API-response message (server.js:400) — the fix is present, not the old `GeteBayOfficialTime`/"Unknown error" path.
+- **Live prod (authenticated, 3×):** `/api/ebay/health` → `{"connected":true,"message":"eBay Trading API connected"}` all three times; `/api/health` 200. Card is GREEN. Persistent, not transient.
+- **Already documented:** the 19:25 UTC entry below records the fix and marks #4 ✅ CLOSED. Memory files already reflected reality.
+
+### What actually happened (recap clarification — the "workflow gap")
+- The session that **died mid-flight** was the **AutoLumen multi-store** diagnose-first read of the eBay layer — it correctly made **no** #4 changes (because #4 was already complete in the preceding 19:25 session). 
+- The recap's "#4 done/deployed/verified green" was **accurate** (from the 19:25 session), but because the *died* session produced no commit, the next briefing was written as if #4 might be unverified.
+- **Lesson:** the SYNC STAMP (Rule 40) + this session log + `git log`/prod already encoded the truth — trust those over a narrative recap. Verifying against git + live prod (as done here) is the correct tiebreaker.
+
+### Real open item (NOT #4)
+- **AutoLumen second-eBay-store wiring** (multi-store layer) is still **UNSTARTED** — the prior brief got as far as the diagnose-first read before the socket error. That is the next deliverable, not #4.
+
+**Files touched:** `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md` (this verification entry only). No `server.js`/app code/schema/snapshot changes — #4 needed none.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry · #8 broader Drive cleanup · **NEW: AutoLumen multi-store eBay layer (diagnose-first read done, wiring not started).** #4 remains CLOSED.
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200, eBay card green (`connected:true`).
+
 ## 19:25 UTC — Fix #4: eBay health card "Unknown error" → card now GREEN (✅ CLOSED)
 
 **Single deliverable:** fix the Dashboard eBay health-card "Unknown error" (follow-up #4). Diagnose-first, approved, then patched. **Health route only** — `ebayCall`, the orders/listings routes, `db/`, and the frontend were untouched.
