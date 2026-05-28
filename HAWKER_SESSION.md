@@ -11,6 +11,37 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 20:41 UTC — Wire AutoLumen as 2nd eBay store (multi-store layer) — Phase 1 proposal + Phase 2 build, deployed & cross-contamination verified ✅
+
+**Single deliverable:** add AutoLumen as a second eBay store (shared inventory). Two-phase: proposal → architect approval → build. **Touched only `server.js` + `public/index.html` + both snapshots.** No schema, no `db/`, no other routes (Ry's locked decision: store is a property of eBay listings/orders only, never of the physical item).
+
+### Phase 1 — approved design decisions
+- **Data model:** every listing/order carries a `store` tag; single merged `ALL_LISTINGS`/`ORDERS` arrays (not per-store arrays) — makes the Inventory Health union natural. No persistence (Rule 9, still in-memory).
+- **Creds:** `STORES` registry (`dynatrack`/`autolumen`, +1 entry per future store); per-store `${PREFIX}_TRADING_API_*`. **Legacy un-prefixed `TRADING_API_*` IGNORED — no fallback** (kept only as rollback safety net).
+- **`ebayCall(store, callName, xml)`** — `store` required, no default, no shared cred path.
+- **Routes:** the 3 existing routes fan out over configured stores (tag + merge + per-store error isolation + `byStore`); added `/api/ebay/:store/{health,listings,orders}` for isolation + the cross-contamination test.
+- **Inventory Health:** union compare; **NEW dedicated "Cross-listed" 6th bucket** (SKU active on ≥2 stores = oversell risk) — does NOT overload "Duplicate" (which stays WMS-side multiplicity); per-row store badges + store filter.
+- **Dashboard:** two independent per-store status cards, each with its own `syncStore` button.
+- **Env guardrail (Ry's choice):** **soft per-store disable** — loud per-store startup log (`OK`/`[MISCONFIG]`) + explicit "legacy vars ignored" line; a misconfigured store's routes fail loud on call; **no hard-throw** so warehouse scan/move/label keeps running.
+
+### Phase 2 — build
+- **server.js:** replaced the whole eBay block with `STORES` registry, `storeCreds`/`missingStoreVars`/`storeConfigured`, `validateStoreEnv()` (runs at boot), store-scoped `ebayHeaders`/`ebayCall`, per-store `fetchStoreHealth/Listings/Orders`, 3 fan-out routes + 3 per-store routes.
+- **public/index.html:** two dashboard cards from `stores[]`; `storeLabel/storeBadge/storeCountLabel/mapOrder/mapListing` helpers; `syncStore(key)` replaces only that store's slice via **`filter(x=>x.store!==key).concat(...)` — never reassigns the array** (flagged with a comment, per architect's correctness requirement); Store columns on Orders + Listings; Inventory Health union + Cross-listed card/tab + per-row store badges + store filter; CSV export gains a Stores column.
+- Validated: `node --check server.js` OK; inline `<script>` compiled clean via `vm` (0 errors).
+
+### Verification (post-deploy, authed via Railway-injected creds — no secrets/PII logged) — commit `533f83d`
+- `/api/health` 200. Per-store health: **both `connected:true`** (Dynatrack + AutoLumen).
+- **CROSS-CONTAMINATION GATE (#3) — PASS:** `/api/ebay/dynatrack/listings` = **3,272** (ItemIDs `286…/287…`) vs `/api/ebay/autolumen/listings` = **532** (ItemIDs `397…`), **overlap 0, disjoint sets** → per-store credentials are isolated, not crossed.
+- Combined `/api/ebay/listings` `byStore: {dynatrack:3272, autolumen:532}`, no errors. Combined health `stores[]` shows both.
+
+**Files touched:** `server.js`, `public/index.html`, `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`. No schema/`db/`/other routes.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (now TWO tokens — calendar both) · #8 broader Drive cleanup · **NEW: retire the legacy un-prefixed `TRADING_API_*` env vars once multi-store is proven stable** (currently ignored but still present as the rollback net). **AutoLumen multi-store: DONE.**
+
+**Rollback:** `git revert 533f83d` returns to single-store code, which reads the still-present un-prefixed `TRADING_API_*` set — eBay sync restored with no env changes. (That's why the legacy set is being kept.)
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; both eBay stores connected; dashboard shows two store cards.
+
 ## 20:07 UTC — Ground-truth verification of #4 (recap-discrepancy check) — #4 confirmed DONE & LIVE; no code change
 
 **Single deliverable:** verify ground truth on follow-up #4 after a prior session died mid-flight (API socket error) and a recap left doubt about whether #4 was actually patched/deployed. **No code touched** — this is a verification + documentation entry only.
