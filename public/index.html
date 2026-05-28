@@ -216,9 +216,8 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <div class="card"><div class="ic cs"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg></div><div class="sl">Items Shipped</div><div class="sv" style="color:var(--success)" id="dash-shipped">–</div></div>
   </div>
   <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">eBay Integration</div>
-  <div class="g2" style="margin-bottom:22px">
+  <div style="margin-bottom:22px">
     <div id="ebay-status-card" style="display:grid;gap:12px;align-content:start"><div class="card"><div class="loading">Checking eBay…</div></div></div>
-    <div class="card"><div class="sl" style="margin-bottom:8px">Quick Import</div><p style="font-size:12px;color:var(--muted);margin-bottom:12px">Import eBay data from a CSV export from Seller Hub.</p><button class="btn btn-s" onclick="navigate('ebay')">Go to Orders →</button></div>
   </div>
   <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:12px">Recent Moves</div>
   <div class="card"><div class="tw"><table><thead><tr><th>Serial</th><th>From</th><th>To</th><th>By</th><th>Time</th></tr></thead><tbody id="moves-log"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody></table></div></div>
@@ -307,11 +306,6 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         Sync Live Orders
       </button>
-      <label class="btn btn-s" style="cursor:pointer">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-        Import CSV
-        <input type="file" accept=".csv" style="display:none" onchange="importOrdersCSV(this)">
-      </label>
     </div>
   </div>
   <div class="g4" style="margin-bottom:20px">
@@ -326,7 +320,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterOrderStatus('Completed',this)">Completed</button>
     <button class="tab" onclick="filterOrderStatus('Cancelled',this)">Cancelled</button>
   </div>
-  <div class="card"><div class="tw"><table><thead><tr><th>Store</th><th>Order ID</th><th>Buyer</th><th>Item</th><th>SKU</th><th>Total</th><th>Date</th><th>Status</th></tr></thead><tbody id="orders-table"><tr><td colspan="8" class="loading">No orders yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Store</th><th>Order ID</th><th>Buyer</th><th>Item</th><th>SKU</th><th>Total</th><th>Date</th><th>Status</th></tr></thead><tbody id="orders-table"><tr><td colspan="8" class="loading">No orders yet — click Sync Live Orders</td></tr></tbody></table></div></div>
 </div>
 
 <!-- ═══════ LISTINGS ═══════ -->
@@ -338,11 +332,6 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         Sync Live Listings
       </button>
-      <label class="btn btn-s" style="cursor:pointer">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-        Import CSV
-        <input type="file" accept=".csv" style="display:none" onchange="importListingsCSV(this)">
-      </label>
     </div>
   </div>
   <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search title or SKU…" oninput="filterListings(this.value)"></div>
@@ -351,7 +340,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterListingStock('stock',this)">In Stock</button>
     <button class="tab" onclick="filterListingStock('zero',this)">No Stock</button>
   </div>
-  <div class="card"><div class="tw"><table><thead><tr><th>Store</th><th>SKU</th><th>Title</th><th>Price</th><th>Qty</th><th>Link</th></tr></thead><tbody id="listings-table"><tr><td colspan="6" class="loading">No listings yet — import a CSV from eBay Seller Hub</td></tr></tbody></table></div></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Store</th><th>SKU</th><th>Title</th><th>Price</th><th>Qty</th><th>Link</th></tr></thead><tbody id="listings-table"><tr><td colspan="6" class="loading">No listings yet — click Sync Live Listings</td></tr></tbody></table></div></div>
   <div style="margin-top:12px;font-size:12px;color:var(--muted);text-align:center" id="listings-showing"></div>
 </div>
 
@@ -468,7 +457,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 
   <div id="health-summary" style="font-size:13px;color:var(--text2);margin-bottom:18px;padding:12px 16px;background:var(--bg3);border-radius:10px;border:1px solid var(--border)">
-    Run a sync to compare your eBay listings against WMS shelf inventory. Import eBay listings CSV first if you haven't already.
+    Run a sync to compare your eBay listings against WMS shelf inventory.
   </div>
 
   <div class="sb">
@@ -1082,78 +1071,12 @@ async function syncStore(key) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  EBAY — CSV import fallback
+//  EBAY — in-memory orders/listings state
 // ═══════════════════════════════════════════════════════
 var ORDERS   = [];
 var ALL_LISTINGS = [];
 var orderFilter = '', orderStatus = 'all';
 var listingFilter = '', listingStock = 'all';
-
-function parseCSV(text) {
-  var lines = text.split('\n').filter(Boolean);
-  if (!lines.length) return [];
-  var headers = lines[0].split(',').map(function(h){ return h.trim().replace(/^"|"$/g,''); });
-  return lines.slice(1).map(function(line) {
-    var cols = [], cur = '', inQ = false;
-    for (var i = 0; i < line.length; i++) {
-      var c = line[i];
-      if (c === '"') { inQ = !inQ; }
-      else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else { cur += c; }
-    }
-    cols.push(cur.trim());
-    var obj = {};
-    headers.forEach(function(h, i) { obj[h] = cols[i] || ''; });
-    return obj;
-  });
-}
-
-function importOrdersCSV(input) {
-  var file = input.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var rows = parseCSV(e.target.result);
-    ORDERS = rows.map(function(r) {
-      // eBay Seller Hub column names (common ones)
-      return {
-        id:     r['Order number'] || r['Order ID'] || r['SaleRecordNumber'] || Object.values(r)[0],
-        buyer:  r['Buyer username'] || r['Buyer name'] || r['BuyerUserID'] || '–',
-        status: r['Order status'] || r['Status'] || 'Completed',
-        total:  parseFloat((r['Total price'] || r['Amount'] || r['TotalPrice'] || '0').replace(/[^0-9.]/g,'')) || 0,
-        date:   r['Sold on date'] || r['Creation date'] || r['SaleDate'] || '',
-        sku:    r['Custom label'] || r['SKU'] || r['Item number'] || '',
-        title:  r['Item title'] || r['Title'] || r['ItemTitle'] || '',
-      };
-    });
-    renderOrders();
-    showToast('Imported ' + ORDERS.length + ' orders');
-    input.value = '';
-  };
-  reader.readAsText(file);
-}
-
-function importListingsCSV(input) {
-  var file = input.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var rows = parseCSV(e.target.result);
-    ALL_LISTINGS = rows.map(function(r) {
-      return {
-        sku:   r['Custom label'] || r['SKU'] || r['Item number'] || '',
-        title: r['Item title'] || r['Title'] || '',
-        price: parseFloat((r['Start price'] || r['Price'] || '0').replace(/[^0-9.]/g,'')) || 0,
-        qty:   parseInt(r['Available quantity'] || r['Quantity'] || '0') || 0,
-        url:   r['Listing URL'] || r['ViewItemURL'] || '#',
-      };
-    });
-    renderListings();
-    showToast('Imported ' + ALL_LISTINGS.length + ' listings');
-    input.value = '';
-  };
-  reader.readAsText(file);
-}
 
 function renderOrders() {
   var data = ORDERS;
@@ -1167,7 +1090,7 @@ function renderOrders() {
   document.getElementById('eo-rev').textContent       = '$' + rev.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',');
   var show = data.slice(0, 300);
   var tb = document.getElementById('orders-table');
-  if (!ORDERS.length) { tb.innerHTML = '<tr><td colspan="8" class="loading">No orders — import a CSV from eBay Seller Hub</td></tr>'; return; }
+  if (!ORDERS.length) { tb.innerHTML = '<tr><td colspan="8" class="loading">No orders — click Sync Live Orders</td></tr>'; return; }
   tb.innerHTML = show.map(function(o) {
     return '<tr><td>' + storeBadge(o.store) + '</td>'
       + '<td class="mono" style="color:var(--text)">' + o.id + '</td><td>' + o.buyer + '</td>'
