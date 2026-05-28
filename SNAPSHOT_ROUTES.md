@@ -1,6 +1,6 @@
 # SNAPSHOT_ROUTES.md — `server.js` API surface
 
-> Orientation map of the backend. Regenerate at session end if `server.js` changed (CLAUDE_RULES rule 38).
+> Orientation map of the backend. Regenerate at session end if `server.js` changed (HAWKER_RULES rule 38).
 > Generated 2026-05-28 from `server.js` (single Express file, ~551 lines). Line numbers are approximate anchors.
 
 ## Architecture

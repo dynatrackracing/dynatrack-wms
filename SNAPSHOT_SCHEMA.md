@@ -1,6 +1,6 @@
 # SNAPSHOT_SCHEMA.md — `db/schema.sql`
 
-> Orientation map of the database. Regenerate at session end if `db/schema.sql` changed (CLAUDE_RULES rule 38).
+> Orientation map of the database. Regenerate at session end if `db/schema.sql` changed (HAWKER_RULES rule 38).
 > Generated 2026-05-28 from `db/schema.sql`. PostgreSQL (Railway). Run once on a fresh DB; **not** a re-runnable migration (rule 28).
 
 ## Tables

@@ -1,8 +1,10 @@
-# CHANGELOG.md
+# HAWKER_CHANGELOG.md
 
 Chronological summary of all changes to HawkerWMS. Newest entries at the TOP. Each entry: `## YYYY-MM-DD — Summary`. Append-only.
 
 ---
+
+## 2026-05-28 — Renamed memory files to `HAWKER_`-prefix for permanent disambiguation from the *other* eBay repo: `LAST_SESSION.md`→`HAWKER_SESSION.md`, `CHANGELOG.md`→`HAWKER_CHANGELOG.md`, `CLAUDE_RULES.md`→`HAWKER_RULES.md` (via `git mv`, history preserved). `CLAUDE.md` kept (Claude Code auto-loads it) + given a `⚠️ PROJECT IDENTITY: HawkerWMS` banner as its first lines. Updated every live internal reference to the new names (CLAUDE.md boot sequence / anti-rogue G,H,I,K,L,M / SYNC ARCHITECTURE; HAWKER_RULES Rules 3,5,6,9,36,39,40 incl. the Rule 39 signoff text; the three SNAPSHOT_* "rule 38" lines; file titles). Historical past-session entries left verbatim (old names remain only there). Prerequisite this session: reconciled a diverged `main` (rebased the 2 unpushed desktop commits onto the laptop's `2f4c513`, kept BOTH concurrent 02:39 entries) and replaced the phantom `7b9c2d8` SYNC STAMP with the real pushed hash. No app code/schema; Drive folder untouched (its stubs still carry old names → folded into follow-up #8).
 
 ## 2026-05-28 — Added CLAUDE_RULES Rule 40 (sync stamp + staleness announce) + CLAUDE.md anti-rogue item M (architect states the stamp first); amended Rule 39's signoff to include `Current stamp: <hash> @ <UTC>`. Implemented the SYNC STAMP block atop LAST_SESSION.md (updated post-push to the content commit hash). Docs only.
 

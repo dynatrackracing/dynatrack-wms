@@ -1,4 +1,4 @@
-# CLAUDE_RULES.md — READ THIS FIRST EVERY SESSION
+# HAWKER_RULES.md — READ THIS FIRST EVERY SESSION
 
 These are non-negotiable constraints for HawkerWMS development. Violating any of these has caused, or would cause, real bugs in production. Read all of them before touching any file.
 
@@ -10,13 +10,13 @@ These are non-negotiable constraints for HawkerWMS development. Violating any of
 
 2. **ONE DELIVERABLE PER SESSION.** Fix one thing, test it, commit it. Do not touch files unrelated to the current task.
 
-3. **READ LAST_SESSION.md AND CHANGELOG.md FIRST.** These tell you what the previous session did. Do not overwrite work from previous sessions without understanding it.
+3. **READ HAWKER_SESSION.md AND HAWKER_CHANGELOG.md FIRST.** These tell you what the previous session did. Do not overwrite work from previous sessions without understanding it.
 
 4. **COMMIT FORMAT:** `git add -A && git commit -m "descriptive message" && git push origin main`. Railway auto-deploys from `main` push (~60-90 seconds).
 
-5. **UPDATE LAST_SESSION.md** at the end of every session with: what was changed, what files were touched, what's still broken, what's next. **LAST_SESSION.md is append-only in the sense that you never delete old entries** — old sessions stay forever. Prepend `## HH:MM UTC — Description` for each new session (newest entry at the top). Date headers (`# YYYY-MM-DD`) separate days.
+5. **UPDATE HAWKER_SESSION.md** at the end of every session with: what was changed, what files were touched, what's still broken, what's next. **HAWKER_SESSION.md is append-only in the sense that you never delete old entries** — old sessions stay forever. Prepend `## HH:MM UTC — Description` for each new session (newest entry at the top). Date headers (`# YYYY-MM-DD`) separate days.
 
-6. **APPEND TO CHANGELOG.md** at the end of every session with: date, summary, files touched.
+6. **APPEND TO HAWKER_CHANGELOG.md** at the end of every session with: date, summary, files touched.
 
 ---
 
@@ -26,7 +26,7 @@ These are non-negotiable constraints for HawkerWMS development. Violating any of
 
 8. **eBay SKU ↔ WMS serial normalization.** eBay SKUs have trailing letter suffixes (`INT4306R`, `MOD19595V`) where R = refurbished, V = variant. WMS serials are bare (`INT4306`, `MOD19595`). Strip trailing letters before comparing in any Inventory Health, matching, or sync logic. Never store the suffixed form in the `items` table.
 
-9. **Schema lives in `db/schema.sql`.** Tables: `locations`, `items`, `moves`, `sequences`. Any schema change requires a new migration file (`db/migrations/NNNN-description.sql`) AND a record in LAST_SESSION.md AND CHANGELOG.md. Do not edit `schema.sql` in place for live database changes.
+9. **Schema lives in `db/schema.sql`.** Tables: `locations`, `items`, `moves`, `sequences`. Any schema change requires a new migration file (`db/migrations/NNNN-description.sql`) AND a record in HAWKER_SESSION.md AND HAWKER_CHANGELOG.md. Do not edit `schema.sql` in place for live database changes.
 
 10. **Serial sequences are not gap-free.** The `sequences` table tracks `next_num` per prefix (INT, MOD, CLU, EXT, ECU, ENG, FUS, DMO, PS). Always increment via atomic `UPDATE sequences SET next_num = next_num + 1 WHERE prefix = $1 RETURNING next_num`. Never compute the next serial by querying `MAX(serial)` — concurrent label prints will collide.
 
@@ -106,15 +106,15 @@ These are non-negotiable constraints for HawkerWMS development. Violating any of
 
 35. **Architect/worker boundary.** Human is architect; Claude Code is worker. The architect never asks the human to perform worker-class tasks (commands, browser actions, endpoint checks, log reads, file uploads, code edits). If a task is worker-class, it goes in the brief to Claude Code. Human tasks are decisions, approvals, and tasks that genuinely cross a system boundary Claude Code cannot reach.
 
-36. **Memory files are canonical in the git repo — not Drive.** The four memory files (`CLAUDE.md`, `CLAUDE_RULES.md`, `LAST_SESSION.md`, `CHANGELOG.md`) plus the `SNAPSHOT_*.md` files live in the repo root (`C:\Users\atenr\dynatrack-wms-repo`, `origin/main`). Claude Code reads them at session start and updates + commits them at session end as part of the normal routine (rules 4–6). **The old `G:\My Drive\dynatrack-wms\` copies are abandoned as of 2026-05-28** — never read or edit memory files there; they are stale.
+36. **Memory files are canonical in the git repo — not Drive.** The four memory files (`CLAUDE.md`, `HAWKER_RULES.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`) plus the `SNAPSHOT_*.md` files live in the repo root (`C:\Users\atenr\dynatrack-wms-repo`, `origin/main`). Claude Code reads them at session start and updates + commits them at session end as part of the normal routine (rules 4–6). **The old `G:\My Drive\dynatrack-wms\` copies are abandoned as of 2026-05-28** — never read or edit memory files there; they are stale.
 
 37. **claude.ai project knowledge is a manual briefing-room re-upload — no automation.** There is no supported public API to write claude.ai project knowledge (confirmed 2026-05; the Files API is a separate developer-API system, and Projects has no write endpoint). Do **not** build cookie-auth scrapers, Drive-connector dependencies, or other workarounds. After a session's commit, the **human (architect)** re-uploads the changed memory files into the project knowledge so the web Claude is briefed with current state. Claude Code must **never claim a sync ran** — none exists; fail loud, never fake success. *(This supersedes the earlier Google-Drive-connector idea and its runbook, which are now moot.)*
 
 38. **Regenerate SNAPSHOTS at session end when code changed.** Maintained snapshots in the repo root: `SNAPSHOT_ROUTES.md` (the `server.js` API surface), `SNAPSHOT_FRONTEND.md` (`public/index.html` pages + functions), `SNAPSHOT_SCHEMA.md` (`db/schema.sql` tables). If a session changed `server.js`, `public/index.html`, or `db/schema.sql`, regenerate the affected snapshot(s) before committing so they reflect HEAD. Snapshots are a fast orientation map for future sessions and must never drift from the code.
 
-39. **Project-knowledge re-upload cadence.** Re-upload the four memory files (`CLAUDE.md`, `CLAUDE_RULES.md`, `LAST_SESSION.md`, `CHANGELOG.md`) to the claude.ai project knowledge **after every session that committed changes to any of them**, OR **weekly at minimum**, whichever is sooner. The web Claude reads project knowledge at chat start; if it's stale, the briefing-room model (Rule 37) silently fails. The human (architect) performs this upload — Claude Code cannot. After a session-end commit, the final step before closing the session is to tell the human: "Memory files updated this session — re-upload CLAUDE.md, CLAUDE_RULES.md, LAST_SESSION.md, CHANGELOG.md to project knowledge before the next web-Claude session. Current stamp: <hash> @ <UTC>."
+39. **Project-knowledge re-upload cadence.** Re-upload the four memory files (`CLAUDE.md`, `HAWKER_RULES.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`) to the claude.ai project knowledge **after every session that committed changes to any of them**, OR **weekly at minimum**, whichever is sooner. The web Claude reads project knowledge at chat start; if it's stale, the briefing-room model (Rule 37) silently fails. The human (architect) performs this upload — Claude Code cannot. After a session-end commit, the final step before closing the session is to tell the human: "Memory files updated this session — re-upload CLAUDE.md, HAWKER_RULES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md to project knowledge before the next web-Claude session. Current stamp: <hash> @ <UTC>."
 
-40. **Sync stamp + staleness announce.** Claude Code maintains a sync stamp as the FIRST line block of LAST_SESSION.md, above all entries:
+40. **Sync stamp + staleness announce.** Claude Code maintains a sync stamp as the FIRST line block of HAWKER_SESSION.md, above all entries:
 
     <!-- SYNC STAMP -->
     LAST PUSHED COMMIT: <short-hash> @ <YYYY-MM-DD HH:MM UTC>

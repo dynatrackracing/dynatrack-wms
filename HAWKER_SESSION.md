@@ -3,13 +3,41 @@ LAST PUSHED COMMIT: 7b9c2d8 @ 2026-05-28 02:39 UTC
 STAMP UPDATED BY: Claude Code, session 02:39 UTC
 <!-- END SYNC STAMP -->
 
-# LAST_SESSION.md
+# HAWKER_SESSION.md
 
 Append-only log of every session. Newest entries go at the TOP. Each session header: `## HH:MM UTC — Description`. Each day gets a `# YYYY-MM-DD` header.
 
 ---
 
 # 2026-05-28
+
+## 18:08 UTC — Rename memory files to `HAWKER_`-prefix + reconcile diverged main + fix phantom sync stamp
+
+**Single deliverable:** rename this project's memory files to `HAWKER_`-prefixed names (permanent disambiguation from the *other* eBay repo) and update every live internal reference. Documentation/memory only — `server.js`, `public/index.html`, `db/` untouched. Required a reconcile first (the repo was diverged on entry).
+
+### STEP 1 — Reconciled the diverged `main` (blocker cleared before renaming)
+- On entry, `main` was **ahead 2 / behind 1** of `origin/main`, and the SYNC STAMP pointed to a **phantom commit `7b9c2d8` that existed nowhere** (local or remote). Root cause: the 02:39 desktop "Add Rule 40" session committed locally but its push never landed, while the laptop pushed `2f4c513` (follow-up #9) in parallel — the two machines forked at `fe4fa63`. Both sides were docs-only (no app code either side).
+- `git rebase origin/main` replayed the 2 desktop commits onto the laptop's `2f4c513`. Conflicts were exactly the expected `LAST_SESSION.md`/`CHANGELOG.md` entry-interleaving; resolved by **keeping BOTH sessions' entries verbatim** — the two concurrent `## 02:39 UTC` entries (desktop Rule 40 + laptop #9) now coexist (newest-at-top by commit time); the laptop's #9 entry preserved intact. Non-destructive: no force-push; the laptop's published `2f4c513` was never rewritten.
+- Pushed the reconciled state (`2f4c513..279357c`); confirmed `main` even with `origin/main` (0 ahead / 0 behind) before renaming.
+
+### STEP 2 — The rename (on the clean, synced tree)
+- `git mv` (history preserved, all detected as `R`):
+  - `LAST_SESSION.md` → `HAWKER_SESSION.md`
+  - `CHANGELOG.md` → `HAWKER_CHANGELOG.md`
+  - `CLAUDE_RULES.md` → `HAWKER_RULES.md`
+  - `CLAUDE.md` — **kept** (Claude Code auto-loads this name). Added a `# ⚠️ PROJECT IDENTITY: HawkerWMS` banner as its literal first lines.
+- **Canonical memory files are now: `CLAUDE.md`, `HAWKER_RULES.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`.**
+- Updated every **live** reference to the new names: CLAUDE.md (boot sequence; anti-rogue G/H/I/K/L/M; CONTEXT rule refs; SYNC ARCHITECTURE four-file list); HAWKER_RULES.md (title + Rules 3, 5, 6, 9, 36, 39, 40 — incl. Rule 39's signoff text); the HAWKER_SESSION.md + HAWKER_CHANGELOG.md titles; the "per …rule 38" line in all three `SNAPSHOT_*.md`. Verified before starting that **zero** old-name refs live in tooling/config/app code.
+- **Historical entries left intact (historical record, per brief):** old filenames now appear ONLY inside past-session entries — HAWKER_SESSION.md (24× `LAST_SESSION`, 18× `CLAUDE_RULES`, 23× `CHANGELOG`) and HAWKER_CHANGELOG.md (8× / 8× / 5×). All sit below the live headers; none in live instructions, tooling, or app code.
+
+### STEP 3 — Phantom stamp fixed
+- The bogus `7b9c2d8` is replaced with the REAL pushed commit hash (see SYNC STAMP at the top of this file, written in the final stamp-only commit per the Rule 40 mechanic). Confirmed the stamp hash equals the actual pushed content commit.
+
+**Files touched:** `CLAUDE.md`, `HAWKER_RULES.md` (←`CLAUDE_RULES.md`), `HAWKER_SESSION.md` (←`LAST_SESSION.md`), `HAWKER_CHANGELOG.md` (←`CHANGELOG.md`), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `SNAPSHOT_SCHEMA.md`. **Drive folder untouched** — its stubs still carry the OLD names (updating them to the new `HAWKER_` names folds into follow-up #8). No app code/schema.
+
+**⏭ PENDING FOLLOW-UPS (carried forward):** #2 hands-on testing · #3 final data extract · #4 dashboard 503 health-card bug (diagnosed last session, not yet patched) · #5 eBay token expiry · #8 broader Drive-folder cleanup (now also: refresh the Drive stubs to the new `HAWKER_` filenames).
+
+**Production status:** unchanged — docs/memory only; Railway redeploys on push but there is no code delta.
 
 ## 02:39 UTC — Add Rule 40 (sync stamp) + CLAUDE.md item M + amend Rule 39 signoff
 

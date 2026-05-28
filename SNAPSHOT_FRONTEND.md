@@ -1,6 +1,6 @@
 # SNAPSHOT_FRONTEND.md — `public/index.html`
 
-> Orientation map of the single-file frontend. Regenerate at session end if `public/index.html` changed (CLAUDE_RULES rule 38).
+> Orientation map of the single-file frontend. Regenerate at session end if `public/index.html` changed (HAWKER_RULES rule 38).
 > Generated 2026-05-28 from `public/index.html` (~1543 lines: inline CSS + inline vanilla JS, no build step, no framework). Line numbers approximate.
 
 ## Shell
