@@ -11,6 +11,29 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 22:31 UTC — Remove the Labels page (dead UI) — frontend only ✅
+
+**Single deliverable:** remove the Labels page. Locked context: serials/barcode labels are minted/printed in a **separate external system** and scanned in (intake = the Scan flow), so the HawkerWMS Labels page was never used. **Frontend only** (`public/index.html`); no server/db/schema changes.
+
+### Diagnosis (Rule 1)
+- **Removed:** nav entry (`data-page="labels"`), the `#page-labels` section, the `navigate('labels')` hook, and the **5 Labels-only functions** — `loadLabels`, `renderSeqDisplay`, `updateLabel`, `autoSerial`, `printLabel`.
+- **Two cross-deps cleaned (would otherwise dangle/throw):** (1) the **init top-level line set `#lp-date`** (lived inside page-labels) → would throw at load → removed it; (2) **Admin's `editSeq`/`addSeq` each called `loadLabels()`** (to refresh the Labels prefix dropdown) → removed just those calls, `loadAdmin()` kept.
+- **Kept (shared):** `var seqData` (used by Admin's Serial Sequences section). Left the now-dead `.lp*` label-preview CSS (harmless).
+
+### Orphaned backend routes (REPORTED ONLY — server.js untouched, per brief; for a separate later decision)
+With Labels gone, **`POST /api/sequences/next/:prefix`** (only `autoSerial` called it) and **`GET`+`POST /api/print-log`** (only `loadLabels`/`printLabel`) have no remaining frontend caller. **`GET/POST/PATCH /api/sequences`** are still used by Admin's Serial Sequences section — NOT orphaned.
+
+### Verification (Rule 17)
+- Pushed `477de6b` (1 file, **106 deletions**). Live by ~30s. `/api/health` 200. Served HTML: all Labels strings **gone** (`data-page="labels"`, `id="page-labels"`, `function loadLabels`, `>Labels<`, `p === 'labels'`). Other pages intact (8 nav targets == 8 `.page` divs: dashboard/scan/locations/inventory/ebay/listings/admin/health). Inline `<script>` compiles clean (`vm`, 0 errors).
+
+**Files touched:** `public/index.html`, `SNAPSHOT_FRONTEND.md`. No backend.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing · #3 final data extract · #5 eBay token expiry (two tokens) · #8 broader Drive cleanup · retire legacy un-prefixed `TRADING_API_*` once multi-store stable · persist eBay listings server-side (`ebay_listings` table) · remove `[Inventory Health]` DIAGNOSTIC log after blank-page confirmed fixed · persistent (Postgres-backed) session store · **NEW: decide whether to delete the now-orphaned backend routes** `POST /api/sequences/next/:prefix` + `GET`/`POST /api/print-log` (and the print-log table / "sequences" minting if truly unused) — frontend no longer calls them after the Labels removal. *(Open — separate decision.)*
+
+**Cutover context (unchanged):** remaining blockers are **#2 hands-on testing** and **#3 final data extract** — architect tasks. Next session ideally focuses on the testing checklist + extract plan, not more code.
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; Labels page gone, all other pages load.
+
 ## 21:59 UTC — Fix false "DB Error" status indicator (honest DB-health dot) + admin moves 401 — frontend only ✅
 
 **Single deliverable:** the top status dot showed red "DB Error" on load/sign-in even when the DB was healthy (`/api/health` → `db:"connected"`), clearing only after an eBay sync. **Frontend only** (`public/index.html`); no server/db/schema changes (confirmed none needed — no auth race).
