@@ -6,6 +6,20 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 02:39 UTC — Add Rule 40 (sync stamp) + CLAUDE.md item M + amend Rule 39 signoff
+
+**Single deliverable:** documentation — add the sync-stamp staleness mechanism. No app code, no snapshot regen.
+
+- **`CLAUDE_RULES.md`:** added **Rule 40 — Sync stamp + staleness announce** (verbatim). Amended **Rule 39**'s closing step so the signoff now includes `Current stamp: <hash> @ <UTC>`.
+- **`CLAUDE.md`:** added **anti-rogue item M** (architect states the sync stamp first at session start) (verbatim).
+- **Implemented the stamp itself this session:** a `<!-- SYNC STAMP -->` block is now the first line block of this file (see very top), updated after the push to reflect the just-pushed commit.
+
+**Mechanics note (so the off-by-one isn't mistaken for staleness):** a git commit cannot contain its own hash, so the stamp is written in a **final stamp-only commit** after the content push and carries the **content commit's** hash. The signoff hash equals the stamp value — the human spot-checks the architect's announced hash against **this session's signoff line** (per the brief), not against raw `git log` HEAD (which will be the trivial stamp commit on top).
+
+**⏭ PENDING FOLLOW-UPS (carried forward):** #2 hands-on testing · #3 final data extract · #4 dashboard 503 health-card bug · #5 eBay token expiry · #8 broader Drive-folder cleanup (stale full project copy remains) · #9 laptop verification ("option A", still open). (#1 folder consolidation & #6 blank Inventory Health closed; #7 connector dropped.)
+
+**Files touched:** `CLAUDE_RULES.md`, `CLAUDE.md`, `LAST_SESSION.md` (this entry + stamp block), `CHANGELOG.md`. No app code/schema/snapshots. Production unchanged.
+
 ## 02:39 UTC — Laptop verification (follow-up #9 ✅): first clone on laptop, round-trip proven
 
 **Machine:** Laptop (computer `RYAN`, user `ryan\atenr`). **Single deliverable:** verify this laptop is set up to work on HawkerWMS exactly like the desktop — pull/push the same GitHub repo, no dependency on the abandoned Drive folder. Diagnostic-first; inventory reported and approved before any change. No app code touched; no snapshot regeneration.

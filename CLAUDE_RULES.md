@@ -112,7 +112,18 @@ These are non-negotiable constraints for HawkerWMS development. Violating any of
 
 38. **Regenerate SNAPSHOTS at session end when code changed.** Maintained snapshots in the repo root: `SNAPSHOT_ROUTES.md` (the `server.js` API surface), `SNAPSHOT_FRONTEND.md` (`public/index.html` pages + functions), `SNAPSHOT_SCHEMA.md` (`db/schema.sql` tables). If a session changed `server.js`, `public/index.html`, or `db/schema.sql`, regenerate the affected snapshot(s) before committing so they reflect HEAD. Snapshots are a fast orientation map for future sessions and must never drift from the code.
 
-39. **Project-knowledge re-upload cadence.** Re-upload the four memory files (`CLAUDE.md`, `CLAUDE_RULES.md`, `LAST_SESSION.md`, `CHANGELOG.md`) to the claude.ai project knowledge **after every session that committed changes to any of them**, OR **weekly at minimum**, whichever is sooner. The web Claude reads project knowledge at chat start; if it's stale, the briefing-room model (Rule 37) silently fails. The human (architect) performs this upload — Claude Code cannot. After a session-end commit, the final step before closing the session is: tell the human "memory files updated this session — re-upload to project knowledge before next web-Claude session."
+39. **Project-knowledge re-upload cadence.** Re-upload the four memory files (`CLAUDE.md`, `CLAUDE_RULES.md`, `LAST_SESSION.md`, `CHANGELOG.md`) to the claude.ai project knowledge **after every session that committed changes to any of them**, OR **weekly at minimum**, whichever is sooner. The web Claude reads project knowledge at chat start; if it's stale, the briefing-room model (Rule 37) silently fails. The human (architect) performs this upload — Claude Code cannot. After a session-end commit, the final step before closing the session is to tell the human: "Memory files updated this session — re-upload CLAUDE.md, CLAUDE_RULES.md, LAST_SESSION.md, CHANGELOG.md to project knowledge before the next web-Claude session. Current stamp: <hash> @ <UTC>."
+
+40. **Sync stamp + staleness announce.** Claude Code maintains a sync stamp as the FIRST line block of LAST_SESSION.md, above all entries:
+
+    <!-- SYNC STAMP -->
+    LAST PUSHED COMMIT: <short-hash> @ <YYYY-MM-DD HH:MM UTC>
+    STAMP UPDATED BY: Claude Code, session <HH:MM UTC>
+    <!-- END SYNC STAMP -->
+
+  At session end, AFTER the commit+push, Claude Code rewrites this block with the just-pushed commit hash and current UTC time, then amends it into that same commit (or commits it as the final step) so the stamp always reflects HEAD. The stamp is the single machine-readable signal of "what state is the canonical repo in."
+
+  The web Claude (architect) reads this stamp at the START of every session and states it back verbatim to the human before doing any work: "I'm briefed from commit <hash> pushed <time>." The human compares that to the latest Claude Code session. If it does not match the most recent push, project knowledge is stale (Rule 39 upload was skipped) — the human re-uploads the four memory files before work proceeds. This makes staleness visible instead of silent, and prevents re-issuing already-closed tasks (the failure mode of 2026-05-27/28).
 
 ---
 

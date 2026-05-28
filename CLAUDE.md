@@ -37,6 +37,8 @@ K. **REGENERATE SNAPSHOTS AT SESSION END** when code changed this session. If yo
 
 L. **REMIND THE HUMAN TO RE-UPLOAD PROJECT KNOWLEDGE** at session end if any of the four memory files were touched this session (per CLAUDE_RULES rule 39).
 
+M. **STATE YOUR SYNC STAMP FIRST (web architect).** At session start, read the SYNC STAMP block atop LAST_SESSION.md and announce the commit hash + push time to the human before any analysis or task work. If you cannot find a stamp, say so — it means the project knowledge predates Rule 40 and is almost certainly stale.
+
 ## WHAT THE USER MEANS WHEN THEY SAY THINGS
 
 - "Make a small fix" = surgical change, do not expand scope

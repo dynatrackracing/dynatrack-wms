@@ -4,6 +4,8 @@ Chronological summary of all changes to HawkerWMS. Newest entries at the TOP. Ea
 
 ---
 
+## 2026-05-28 — Added CLAUDE_RULES Rule 40 (sync stamp + staleness announce) + CLAUDE.md anti-rogue item M (architect states the stamp first); amended Rule 39's signoff to include `Current stamp: <hash> @ <UTC>`. Implemented the SYNC STAMP block atop LAST_SESSION.md (updated post-push to the content commit hash). Docs only.
+
 ## 2026-05-28 — Laptop verification (follow-up #9 ✅): first clone on this laptop and first laptop→GitHub push, proving the cross-machine git round trip. Inventory (diagnostic-first): no prior clone; git 2.54.0; GCM auth (`credential.helper=manager`) cached so the clone needed no browser prompt; Auto Mode already set in `~/.claude/settings.json`; node v18.20.4/npm 10.7.0; Drive memory files already MOVED-stubs (incl. the two `(1)` conflict copies). Cloned to `C:\Users\atenr\dynatrack-wms-repo`, verified main @ `fe4fa63`, clean. Noted for future sessions: this laptop's user path is `C:\Users\atenr` — SAME as desktop, not different. No app code/schema/snapshots; nothing modified in Drive (broader cleanup remains #8).
 
 ## 2026-05-28 — Stubbed the abandoned Drive memory files (SIX: the four named + the two `(1)` duplicates `LAST_SESSION (1).md` / `CHANGELOG (1).md`) with "MOVED — DO NOT EDIT" pointers to the repo. Added CLAUDE_RULES Rule 39 (project-knowledge re-upload cadence) + CLAUDE.md anti-rogue item L. No app code/schema/snapshots. Deferred new follow-up #8 (broader Drive cleanup — stale full project copy remains) and noted #9 (laptop verification still open).
