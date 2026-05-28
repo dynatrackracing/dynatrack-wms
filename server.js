@@ -381,19 +381,25 @@ async function ebayCall(callName, bodyXml) {
   });
 }
 
-// Health check — verifies credentials work
+// Health check — exercises the same call live sync uses (GetMyeBaySelling) so the card
+// reflects real sync capability, instead of the flakier GeteBayOfficialTime probe which
+// can return a non-XML HTTP 503 gateway page that has no <Ack> and no error envelope.
 app.get('/api/ebay/health', requireAuth, async (req, res) => {
   const configured = !!(process.env.TRADING_API_TOKEN && process.env.TRADING_API_APP_NAME);
   if (!configured) {
     return res.json({ connected: false, message: 'TRADING_API_* environment variables not set in Railway.' });
   }
   try {
-    const xml = await ebayCall('GeteBayOfficialTime', '');
+    const xml = await ebayCall('GetMyeBaySelling',
+      '<ActiveList><Pagination><EntriesPerPage>1</EntriesPerPage><PageNumber>1</PageNumber></Pagination></ActiveList>');
     const ack = parseXmlValue(xml, 'Ack');
     if (ack === 'Success' || ack === 'Warning') {
-      res.json({ connected: true, message: 'eBay Trading API connected · Australia site' });
+      res.json({ connected: true, message: 'eBay Trading API connected' });
+    } else if (!ack) {
+      // No <Ack> => not a Trading API XML response (e.g. eBay's HTTP 503 "Service Unavailable" HTML page).
+      res.json({ connected: false, message: 'eBay status probe got a non-API response (likely an HTTP 503/maintenance page). Live sync may still be working — check Listings/Orders.' });
     } else {
-      const errMsg = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage') || 'Unknown error';
+      const errMsg = parseXmlValue(xml, 'LongMessage') || parseXmlValue(xml, 'ShortMessage') || 'eBay API error';
       res.json({ connected: false, message: 'eBay API error: ' + errMsg });
     }
   } catch (e) {

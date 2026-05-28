@@ -1,7 +1,7 @@
 # SNAPSHOT_ROUTES.md — `server.js` API surface
 
 > Orientation map of the backend. Regenerate at session end if `server.js` changed (HAWKER_RULES rule 38).
-> Generated 2026-05-28 from `server.js` (single Express file, ~551 lines). Line numbers are approximate anchors.
+> Generated 2026-05-28 from `server.js` (single Express file, ~556 lines). Line numbers are approximate anchors.
 
 ## Architecture
 - Single-file Express app (`server.js`) + PostgreSQL (`pg.Pool`, `DATABASE_URL`). Serves the SPA from `public/` and all `/api/*` routes.
@@ -32,13 +32,13 @@
 | POST | `/api/sequences` (291) | yes | `{prefix}` upper/trimmed; create `ON CONFLICT DO NOTHING`. |
 | GET | `/api/print-log` (304) | yes | Last 100 prints, `printed_at DESC`. |
 | POST | `/api/print-log` (311) | yes | `{value,type=serial,qty=1}`. |
-| GET | `/api/ebay/health` (385) | yes | Calls `GeteBayOfficialTime`; `{connected,message}`. ⚠️ **Known bug (pending #4):** a 503/HTML response → "Unknown error". No server-side logging. |
-| GET | `/api/ebay/orders` (405) | yes | `GetOrders`, last `days`(90), paginated 100/page → `{orders,count,fetched}`. 503 if no token. ⚠️ raw responses contain **buyer PII** — never log them. |
-| GET | `/api/ebay/listings` (464) | yes | `GetMyeBaySelling` ActiveList, 200/page, cap 50 pages → `{listings,count,fetched}`. 503 if no token. **Not persisted** — there is no `ebay_listings` table. |
-| GET | `/api/stats` (519) | yes | Dashboard: item counts, location count, recent 10 moves, today's scan count. |
-| GET | `*` (544) | public | Catch-all → serves `public/index.html` (SPA). |
+| GET | `/api/ebay/health` (387) | yes | Probes with `GetMyeBaySelling` (1 entry — same call as listings sync, no buyer PII); `{connected,message}`. Fixed #4 (2026-05-28): a non-XML/503 response (no `<Ack>`) now returns an honest "non-API response / likely 503" message instead of "Unknown error"; `Ack=Failure` surfaces eBay's LongMessage. |
+| GET | `/api/ebay/orders` (411) | yes | `GetOrders`, last `days`(90), paginated 100/page → `{orders,count,fetched}`. 503 if no token. ⚠️ raw responses contain **buyer PII** — never log them. |
+| GET | `/api/ebay/listings` (470) | yes | `GetMyeBaySelling` ActiveList, 200/page, cap 50 pages → `{listings,count,fetched}`. 503 if no token. **Not persisted** — there is no `ebay_listings` table. |
+| GET | `/api/stats` (525) | yes | Dashboard: item counts, location count, recent 10 moves, today's scan count. |
+| GET | `*` (550) | public | Catch-all → serves `public/index.html` (SPA). |
 
 ## eBay helper layer (322–382)
 - `EBAY_ENDPOINT = https://api.ebay.com/ws/api.dll`; `ebayHeaders()` sets site ID `0` (US), compatibility level `967`, and the APP/CERT/DEV names. `ebayCall(callName, bodyXml)` wraps the XML request with `<eBayAuthToken>` from `TRADING_API_TOKEN`.
 - `parseXmlValue` / `parseXmlAll` are regex-based minimal XML extractors.
-- ⚠️ **`ebayCall` ignores `res.statusCode`** — any non-200/HTML body resolves as data, which is the root of the `/api/ebay/health` "Unknown error" bug (pending #4).
+- ⚠️ **`ebayCall` ignores `res.statusCode`** — any non-200/HTML body resolves as data. `/api/ebay/health` now guards against this (treats a no-`<Ack>` body as a "non-API response", fixed #4); `orders`/`listings` would still surface such a body as a thrown "eBay API error".
