@@ -11,6 +11,35 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-28
 
+## 23:12 UTC — Build Print & Pick List (sold-but-unshipped → WMS locations, mark-picked → SHIPPED) ✅
+
+**Single deliverable:** the Print & Pick List feature, per the prior session's approved proposal. Backend (server.js) + frontend (public/index.html). **No schema migration** (none needed). READ-ONLY to eBay (Rule 25).
+
+### Pre-build safety checks (decision #4) — passed
+- No location named `'SHIPPED'` (verified live: 537 locations, 0 match). `moves.to_location` is `NOT NULL` but **has no FK** and **nothing joins it to `locations`** (grepped) → using `'SHIPPED'` as a sentinel in `moves.to_location` is safe and won't break any query.
+
+### Backend (server.js)
+- **`fetchStoreOrders` (504):** now parses eBay **`ShippedTime` → `shipped` boolean** (present = shipped); keeps `OrderStatus`. (Harmlessly also surfaces on `/api/ebay/orders`.)
+- **`GET /api/picklist` (623):** both stores' orders where **`shipped=false && status!=Cancelled`**, each line joined to its WMS item's shelf location via **server-side `normalizeSkuKey` (617)** (Rule 8 — byte-identical to the frontend copy, commented). No-WMS-match lines → **`locationUnknown:true`, NEVER dropped**; already-SHIPPED matches → dropped. Grouped one order/package, lines sorted by location. Per-store failures isolated.
+- **`POST /api/pick {serial}` (678):** one `BEGIN…COMMIT` mirroring `/api/move` — `UPDATE items SET status='SHIPPED', location=NULL` + INSERT exactly **one** `moves` row (`from_location`=prior shelf, `to_location='SHIPPED'` SENTINEL, `moved_by='dynatrack'`). 404 if serial unknown.
+
+### Frontend (public/index.html, single file, no libraries)
+- New **"Pick List" nav** entry (eBay group, after Orders) + **`#page-picklist`**: one card per order, lines sorted by location; each line shows location (or **"location unknown"** badge) / serial / SKU / qty + a **Mark picked** button (`markPicked` → `POST /api/pick` → re-render so the line drops off). A **Print** button (`printPickList` → `window.print()`).
+- **`@media print`** block hides `nav`/`aside`/other pages/`.no-print` and shows only the active sheet (`.pick-order` avoids page breaks).
+
+### Verification (Rule 17)
+- `node --check server.js` OK; inline `<script>` compiles clean (`vm`, 0 errors). Pushed `f54b01b`; live ~20s; `/api/health` 200. Pick List strings present in served HTML; 9 nav targets == 9 `.page` divs.
+- Authed (via Railway-injected creds): **`/api/picklist` → 17 unshipped orders** (dynatrack 15 / autolumen 2), no errors; **12 lines flagged `location-unknown`** (≈ the ~424 uncaptured-items tech debt — correctly surfaced, not dropped). **`/api/pick` bogus serial → 404** (route wired, **no mutation**).
+- ⚠️ **NOT done by me (flag for architect):** the real **mark-picked happy-path** (a genuine matched line → SHIPPED + moves row + drop-off) and the **visual print** — I deliberately did **not** mutate real inventory / write a permanent (append-only, Rule 13) moves row on prod for a test. Code mirrors `/api/move`'s audited txn + the 404 path is verified; please confirm the live happy-path + print on a real matched order.
+
+**Files touched:** `server.js`, `public/index.html`, `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`. No schema/`db/`.
+
+**⏭ PENDING FOLLOW-UPS:** #2 hands-on testing (now incl. the mark-picked happy-path + print) · #3 final data extract · #5 eBay token expiry · #8 broader Drive cleanup · retire legacy un-prefixed `TRADING_API_*` · persist eBay listings server-side (`ebay_listings`) · remove `[Inventory Health]` DIAGNOSTIC log · persistent (Postgres-backed) session store · delete orphaned `POST /api/sequences/next/:prefix` + `GET`/`POST /api/print-log` · **NEW: centralize `normalizeSkuKey` (now duplicated in server.js + the frontend `loadInventoryHealth` — must stay byte-identical until then)** · **NEW (data quality): the 12 location-unknown pick lines** reflect sold SKUs with no WMS item — expected per tech debt, but worth a pass during hands-on testing.
+
+**Cutover context (unchanged):** remaining blockers are **#2 hands-on testing** and **#3 final data extract** — architect tasks.
+
+**Production status:** `hawkerwms.up.railway.app` healthy — `/api/health` 200; Pick List live (read + route-wiring verified).
+
 ## 22:56 UTC — Remove Import CSV from Dashboard / eBay Orders / eBay Listings (CSV upload retired) — frontend only ✅
 
 **Single deliverable:** remove the "Import CSV" controls from the three pages. CSV upload is retired entirely. **Frontend only** (`public/index.html`); no server/db/schema changes. **Export CSV left entirely alone.**
