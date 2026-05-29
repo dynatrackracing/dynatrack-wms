@@ -936,9 +936,25 @@ function refreshWorkingDateStyle() {
 }
 (function initWorkingDate(){ var inp = document.getElementById('working-date'); if (inp) inp.value = workingDate; refreshWorkingDateStyle(); })();
 
-document.getElementById('scan-in').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && this.value.trim()) handleScan(this.value.trim());
-});
+// Robust item capture (Fix 2026-05-29): a gap timer commits the staged code once keystrokes
+// stop (HID scanners burst <20ms/char then pause), so fast back-to-back scans can't merge/drop;
+// an Enter/CR suffix commits immediately. Stages exactly one serial; refocuses Panel 1.
+var scanTimer = null, locScanTimer = null;
+var SCAN_FLUSH_MS = 80;                 // within-scan keystrokes <20ms apart; tuned for HID bursts
+function commitScan() {
+  clearTimeout(scanTimer); scanTimer = null;
+  var el = document.getElementById('scan-in');
+  var code = (el.value || '').trim();
+  el.value = '';
+  if (!code) return;
+  handleScan(code);                     // known → stage serial; unknown → intake confirm
+  el.focus();                           // ready for the next item scan (unknown→modal focus wins after its fetch)
+}
+(function bindScanIn() {
+  var el = document.getElementById('scan-in');
+  el.addEventListener('input', function() { clearTimeout(scanTimer); scanTimer = setTimeout(commitScan, SCAN_FLUSH_MS); });
+  el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); commitScan(); } });
+})();
 
 // ── New-item intake confirm (unknown serial → create explicitly, never silent-upsert) ──
 function openIntake(serial) {
@@ -1013,10 +1029,37 @@ function selectLoc(name) {
   document.getElementById('loc-dropdown').style.display = 'none';
 }
 
+// Scannable destination (Fix 2026-05-29): a location scanned into FILTER LOCATIONS resolves to
+// SELECTED. Enter does full resolution; the gap timer resolves ONLY an exact match (so manual
+// partial-typing to filter never auto-selects). Tap-to-select via the dropdown is unchanged.
+function commitLocScan() {
+  clearTimeout(locScanTimer); locScanTimer = null;
+  var code = (document.getElementById('loc-filter').value || '').trim();
+  if (!code) return;
+  var exact = scanLocations.find(function(l) { return l.name.toLowerCase() === code.toLowerCase(); });
+  if (exact) selectLoc(exact.name);     // gap fallback acts only on a definite exact match
+}
+function resolveLocInput() {
+  var code = (document.getElementById('loc-filter').value || '').trim();
+  if (!code) return;
+  var lc = code.toLowerCase();
+  var exact = scanLocations.find(function(l) { return l.name.toLowerCase() === lc; });
+  if (exact) { selectLoc(exact.name); return; }
+  var matches = scanLocations.filter(function(l) { return l.name.toLowerCase().indexOf(lc) >= 0; });
+  if (matches.length === 1) { selectLoc(matches[0].name); return; }
+  if (matches.length === 0) { selectLoc(code); return; }   // unknown scanned code → pending dest (/api/move auto-creates the row)
+  showToast(matches.length + ' locations match — tap one', true);   // ambiguous → don't guess
+}
+(function bindLocFilter() {
+  var el = document.getElementById('loc-filter');
+  el.addEventListener('input', function() { clearTimeout(locScanTimer); locScanTimer = setTimeout(commitLocScan, SCAN_FLUSH_MS); });
+  el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); resolveLocInput(); } });
+})();
+
 async function doMove() {
   if (!scannedSerial) { showToast('Scan an item first', true); return; }
   if (scannedIsNew) { openIntake(scannedSerial); return; }   // unknown serial → intake confirm, not a silent move-create
-  if (!selectedLocName) { showToast('Select a destination', true); return; }
+  if (!selectedLocName) { showToast('Scan or select a destination', true); return; }
   var btn = document.getElementById('move-btn');
   btn.disabled = true;
   setSyncing();
@@ -1037,6 +1080,8 @@ function resetScan() {
   document.getElementById('scan-result').style.display = 'none';
   document.getElementById('selected-loc').textContent = '–';
   document.getElementById('scan-in').value = '';
+  document.getElementById('loc-filter').value = '';
+  document.getElementById('loc-dropdown').style.display = 'none';
   document.getElementById('scan-in').focus();
 }
 
