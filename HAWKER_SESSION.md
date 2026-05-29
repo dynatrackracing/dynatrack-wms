@@ -11,6 +11,18 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 12:34 UTC — Research-report gap analysis folded into the Build Plan (documentation only)
+
+**Single deliverable:** appended a **"Research-Report Gap Analysis & Open Questions"** subsection to the Confirmed Workflow & Build Plan (the 01:37 entry below) and folded the enhancement candidates into its prioritized backlog as **#20–#25** (reconciled with existing items — cross-referenced, not duplicated). **No code/schema/DB/new files.**
+
+- **🔴 Open question recorded (needs Ry):** does the business **dismantle donor vehicles** or **source individual parts**? If individual parts, the report's donor-vehicle/VIN/Hollander/core-charge model is OUT — **gates the condition-grade/fitment item (#24).**
+- **Enhancement candidates (NOT cutover blockers), prioritized:** [HIGHEST] **double-sell prevention across the two stores** (extends the existing read-only Cross-listed detection) · **scan-to-verify at pick** (bolt-on to the built Pick List) · **returns/RMA** (folds into #10 soft-archive) · **photo-at-intake** (folds into #7 new-item intake) · **condition-grade/fitment** (gated on the donor-vehicle question) · [lowest] **ABC cycle counting + aging report**.
+- **Deliberate divergences recorded (conscious, NOT gaps):** eBay stays read-only (vs the report's WMS-writes-listings); one shared login (vs per-user roles — the `moves.moved_by` audit log can't attribute actions to individuals).
+
+**Files touched:** `HAWKER_SESSION.md` (this entry + the Build-Plan subsection/backlog edits), `HAWKER_CHANGELOG.md`. No app code/schema/DB/new files; no SNAPSHOT regen. Cutover status unchanged (build baseline live; final same-day extract+import still pending).
+
+**Production status:** unchanged — documentation only; `hawkerwms.up.railway.app` healthy.
+
 ## 07:39 UTC — Final import (#3) Phase 2: REAL import COMMITTED ✅ (build baseline; NOT cutover)
 
 **Single deliverable:** ran the real baseline import (`scripts/import-baseline.mjs --commit`) — clean reload of `wms-full-backup.json` into live prod. **This is the BUILD baseline so we develop against true data; it is NOT the cutover** (warehouse still on the old WMS; a final same-day extract+import is still required at go-live — re-run this same script).
@@ -104,6 +116,23 @@ clean part → photograph it with its SKU → put on a shelf or in a tote (**STO
 ### Cutover note
 Warehouse is **STILL on the old WMS**. Prod = the 2026-04-02 seed + test scans only. **Real cutover needs a FINAL same-day extract + import, then stop using the old system.** The upcoming import loads realistic data so we build against the true data shape.
 
+### Research-Report Gap Analysis & Open Questions (appended 2026-05-29 12:34 UTC)
+WMS research report vs HawkerWMS's confirmed scope. **None of these are cutover blockers.**
+
+**🔴 OPEN QUESTION (UNRESOLVED — needs Ry):** Does the business **dismantle donor vehicles** or **source individual parts**? If individual parts, the report's largest section — **donor-vehicle/VIN parent model, Hollander interchange, VIN decode, core charges** — **does NOT apply**, and the condition-grade/fitment work below is dropped. **This gates the grading/fitment items.**
+
+**Enhancement candidates (prioritized; NOT cutover blockers):**
+- **[HIGHEST VALUE] Double-sell prevention across the two stores (Dynatrack + AutoLumen)** — the report's single most important rule for one-of-one items. Today Inventory Health only *surfaces* the risk (read-only Cross-listed bucket); *actively preventing* a double-sale is the future feature. Builds on existing Cross-listed detection.
+- **Scan-to-verify at pick** — a "scan to confirm" step on the Pick List before it flips to SHIPPED (biggest single shipping-error catcher). Cheap bolt-on to the existing pick flow.
+- **Returns / RMA flow** — log return → re-inspect → relist or scrap. Dovetails with soft-archive.
+- **Photo-at-intake** — basic photo step in the new-item intake screen (tablet has a 64MP camera). eBay listing photos still done in eBay.
+- **Condition grade + fitment fields per item** — only if it maps to how they sell; **gated on the donor-vehicle question above.**
+- **[LOWEST] ABC cycle counting + inventory-aging report.**
+
+**Deliberate divergences from the report (conscious choices, NOT gaps):**
+- **eBay stays read-only** — the report assumes the WMS creates/updates listings; here ShippingEasy + eBay handle fulfillment, and HawkerWMS never writes to eBay (Rule 25).
+- **One shared login** — the report assumes per-user roles; accepted tradeoff that the audit log (`moves.moved_by`) can't attribute actions to individuals.
+
 **Files touched:** `HAWKER_SESSION.md` (this entry), `HAWKER_CHANGELOG.md`. No app code, schema, or DB writes.
 
 ### ⏭ PENDING FOLLOW-UPS (reconciled — supersedes prior snapshots)
@@ -132,7 +161,15 @@ Warehouse is **STILL on the old WMS**. Prod = the 2026-04-02 seed + test scans o
 18. **Retire legacy un-prefixed `TRADING_API_*`** env vars once multi-store is proven stable.
 19. **eBay token-expiry calendar** (two tokens).
 
-*(Folded: the 2026-05-28 "12 location-unknown pick lines" observation → #11/#2; it reflects sold SKUs with no WMS item, expected until the final import. #8 broader Drive cleanup remains open but is low priority post-rename.)*
+**Enhancement candidates (post-cutover — WMS research report; NOT blockers; see the Gap Analysis subsection above):**
+20. **[HIGHEST] Double-sell prevention across stores** — extend the existing Cross-listed detection from surface-only → actively prevent a double-sale of a one-of-one item.
+21. **Scan-to-verify at pick** — "scan to confirm" before SHIPPED; bolt-on to the built Pick List.
+22. **Returns / RMA flow** — log → re-inspect → relist/scrap; **folds into #10 (soft-archive)**.
+23. **Photo-at-intake** — **folds into #7 (new-item intake)**; tablet 64MP camera (eBay photos still in eBay).
+24. **Condition grade + fitment fields** — **GATED on the donor-vehicle question** (dropped entirely if "individual parts").
+25. **[LOWEST] ABC cycle counting + inventory-aging report.**
+
+*(Folded: the 2026-05-28 "12 location-unknown pick lines" observation → #11/#2; it reflects sold SKUs with no WMS item, expected until the final import. #8 broader Drive cleanup remains open but is low priority post-rename. The report's donor-vehicle/VIN/Hollander/core-charge model is OUT unless Ry confirms vehicle dismantling (gates #24); eBay-read-only and one-shared-login are deliberate divergences, not gaps.)*
 
 **Production status:** unchanged — `hawkerwms.up.railway.app` healthy; docs-only, nothing deployed (Railway redeploys on push, no code delta).
 
