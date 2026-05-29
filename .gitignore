@@ -1,0 +1,11 @@
+# Dependencies (installed per-machine; not committed)
+node_modules/
+package-lock.json
+
+# Secrets / machine-local
+.env
+.env.*
+
+# Data dumps / rollback artifacts (never commit prod data)
+hawker-preexport-*.json
+*.preexport.json

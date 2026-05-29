@@ -11,6 +11,34 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 07:23 UTC — Final import (#3) Phase 1: import script + pre-export + DRY-RUN (NO commit) → awaiting approval
+
+**Single deliverable (Phase 1):** wrote the one-off `scripts/import-baseline.mjs`, ran the read-only **PRE-EXPORT**, and ran the **DRY-RUN** (`BEGIN…compute…ROLLBACK`). **No real COMMIT / no persistent DB write.** All locked decisions baked in (Option B clean reload; SHIPPED collapse; `locationType`→`type`; synthetic `import-baseline` moves; sequences recompute; flag garbage serials; skip auth/ebay/derived).
+
+### Plumbing (important for cutover)
+`railway run` on the app service injects only the **internal** `DATABASE_URL` (`postgres.railway.internal`) — unreachable from a dev box. The script connects via the **public TCP proxy**: run with **`railway run --service Postgres node scripts/import-baseline.mjs`** (injects `DATABASE_PUBLIC_URL` = `interchange.proxy.rlwy.net:13701`). Baked into the script (`DATABASE_PUBLIC_URL || DATABASE_URL`) + header. SSL `{rejectUnauthorized:false}`.
+
+### Safety guards (all verified working)
+- **DRY-RUN by default** (rollback); real write requires `--commit`.
+- **ABORT GUARD passed:** all 3969 current prod moves are `moved_by='dynatrack'` (test) — in the safe set → confirms prod is pure test/seed (nothing real). The guard REFUSES a clean-reload if any non-safe (real human) marker appears, unless `--override-abort-guard` — protects against a post-go-live wipe.
+- **PRE-EXPORT** rollback artifact → `~/hawker-preexport-<ts>.json` (gitignored, NOT committed). Fixed a pre-export pg parallel-query bug (now sequential).
+- Transactional FK-safe reload (delete moves→items→locations; bulk-insert locations→items→moves→sequences, chunked).
+
+### DRY-RUN result (rolled back — no change)
+- Current prod: 537 loc / 3380 items / 3969 moves / 12 seq.
+- DELETE 537 loc / 3380 items / 3969 moves → INSERT 544 loc / 5061 items / 5061 moves / 14 seq.
+- **End-state EXACTLY as predicted (Rule 27): 544 locations** (522 SHELF_BIN + 21 UNLISTED_TOTE + 1 SHIPPED), **5061 items = 3337 STORED + 1724 SHIPPED**, 5061 synthetic baseline moves, **FK orphans = 0**, 0 referenced-missing locations.
+
+### ⚠ Flags for approval (decide before Phase 2 `--commit`)
+1. **59 "garbage" serials (not 1), ALL in SHIPPED locations** — 22–30-digit USPS/UPS tracking-number format (9405…/9434…/9400…/4202…): ~59 shipped items were scanned with the **shipping-label barcode** as their serial. Imported + flagged + excluded from sequences (decision #6). Low stakes (already shipped) but **recommend reviewing/cleaning**; not real part serials.
+2. **Sequences end at 17, not 14** — the reload clears moves/items/locations but **not `sequences`**, so prod's 12 prefixes ∪ 14 computed = 17; and the 14 computed include ~5 likely-typo prefixes (`M`, `MFD`, `MOMD`, `EOD`, `RYN` from malformed serials). Sequences are **vestigial** (serials minted externally), so harmless — but for Phase 2 choose: (a) leave as-is, (b) `DELETE FROM sequences` first (clean = only the 14), or (c) restrict to a known prefix allow-list. Recommend (b) or (c).
+
+**Files:** `scripts/import-baseline.mjs` (new, committed — NOT app-wired), `.gitignore` (new — guards node_modules/lockfile/.env/pre-export), `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. Reverted an accidental `pg` version bump in package.json from `npm install`. No app code/schema/DB writes; no SNAPSHOT regen (app surface unchanged). Open follow-ups unchanged from the 01:37 Confirmed Workflow entry + the two flags above.
+
+**NEXT (Phase 2 — awaiting approval):** (1) architect takes a Railway Postgres snapshot (UI); (2) real run `railway run --service Postgres node scripts/import-baseline.mjs --commit`; (3) post-import verification (Rule 27 counts). Plus your calls on flags 1 & 2.
+
+**Production status:** unchanged — DRY-RUN only, rolled back; `hawkerwms.up.railway.app` healthy (537 loc / 3380 items still live).
+
 ## 01:37 UTC — Confirmed Workflow & Build Plan (documentation only — no code/schema/DB)
 
 **Single deliverable:** persist the confirmed daily workflow, device/scanner requirement, locked decisions, build backlog, and parked to-dos as the durable reference for the build sessions ahead. **No code, schema, DB writes, or new files this session.** Reconciled with prior follow-up snapshots (this entry's PENDING list supersedes them; old entries left as historical record).
