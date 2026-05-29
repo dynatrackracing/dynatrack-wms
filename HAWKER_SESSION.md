@@ -11,6 +11,27 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 16:41 UTC — Migration 0002: `items.intake_date DATE` (additive; no app behaviour change)
+
+**Single deliverable:** added `items.intake_date` (DATE, nullable) — the foundation for the unlisted-aging view. **Additive schema only, mirroring the S1 `ebay_order_lines` pattern; no app/route/UI change.**
+
+### Diagnose-first (read-only, Rule 1)
+Live `items` columns = id, serial, status, location, notes, created_at, updated_at — **no `intake_date`** (confirmed via information_schema). `db/migrations/` had only `0001` → next is `0002`. Counts 544 loc / 5061 items / 5167 moves / 14 seq. (`db/schema.sql` read, not edited — Rule 9.)
+
+### Built + applied
+- **New `db/migrations/0002-items-intake-date.sql`:** `ALTER TABLE items ADD COLUMN IF NOT EXISTS intake_date DATE;` + `CREATE INDEX IF NOT EXISTS items_intake_date_idx ON items(intake_date);` — idempotent/additive, in one txn. **Nullable, no default** so existing baseline rows stay NULL (= unknown/legacy age, deliberately **not** backfilled); future intake sets it explicitly.
+- Applied to live prod via `railway run --service Postgres`. `db/schema.sql` NOT edited in place.
+
+### Verified (read-only)
+`intake_date` present: `date`, nullable=YES, default=null. **All 5061 rows NULL** (set_rows 0). Index `items_intake_date_idx` present. **Row counts unchanged** (544/5061/5167/14). `/api/health` 200.
+
+**Files touched:** `db/migrations/0002-items-intake-date.sql` (new), `SNAPSHOT_SCHEMA.md` (regenerated — column + index + migrations list), `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **DB state changed:** new empty column only. No app code/frontend/route change; no `schema.sql` edit. Throwaway diag/apply scripts deleted (Anti-rogue C).
+
+**Production status:** `hawkerwms.up.railway.app` healthy; behaviour unchanged (column dormant). 544 loc / 5061 items / 5167 moves / 14 seq.
+
+### ⏭ Not this session (folds into existing backlog)
+Intake-flow stamping of `intake_date` (→ new-item intake #7), the batch-date override UI, the unlisted-aging view itself, and any legacy backfill.
+
 ## 16:36 UTC — Fix: exclude sold-out (available-0) eBay listings from Inventory Health
 
 **Single deliverable:** sold-out listings were counted as live inventory in Inventory Health — inflating "eBay Inventory" and dumping phantom rows into "eBay Only." Now excluded from the reconciliation and the count. eBay read-only (Rule 25 — ActiveList only). Server + frontend.
