@@ -587,6 +587,18 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 </div>
 
+<!-- LOCATION DETAIL (read-only overlay; items in a bin — NOT a .page nav section) -->
+<div class="modal-bg" id="modal-location-detail">
+  <div class="modal" style="max-width:620px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h2 id="locd-title" class="mono" style="margin:0">Location</h2>
+      <button class="btn btn-s" onclick="closeModal('modal-location-detail')">Close</button>
+    </div>
+    <div id="locd-sub" style="font-size:12px;color:var(--muted);margin-bottom:14px">…</div>
+    <div id="locd-body" style="max-height:62vh;overflow-y:auto"><div class="loading">Loading…</div></div>
+  </div>
+</div>
+
 <!-- ITEM HISTORY (read-only overlay; reuses the modal pattern — NOT a .page nav section) -->
 <div class="modal-bg" id="modal-item-history">
   <div class="modal" style="max-width:560px">
@@ -1074,15 +1086,63 @@ function setLocZone(z, btn) {
 
 function filterLocGrid(v) { locSearch = v.toLowerCase(); renderLocGrid(); }
 
+// Map locations.type → a clean display label / badge (SHELF BIN / TOTE / SHIPPED / raw).
+function locTypeLabel(t) {
+  if (t === 'SHELF_BIN') return 'SHELF BIN';
+  if (t === 'UNLISTED_TOTE' || t === 'RETURNS_TOTE') return 'TOTE';
+  if (t === 'SHIPPED') return 'SHIPPED';
+  return t || '—';
+}
+function locTypeBadge(t) {
+  var cls = t === 'SHIPPED' ? 'bg-m' : (t === 'UNLISTED_TOTE' || t === 'RETURNS_TOTE') ? 'bg-p' : t === 'SHELF_BIN' ? 'bg-s' : 'bg-w';
+  return '<span class="badge ' + cls + '">' + locTypeLabel(t) + '</span>';
+}
+
+// Name · Type · Items · View list (replaces the old card grid; name kept per Rule D).
 function renderLocGrid() {
   var data = allLocations;
   if (locZone !== 'all') data = data.filter(function(l){ return l.type === locZone; });
   if (locSearch) data = data.filter(function(l){ return l.name.toLowerCase().indexOf(locSearch) >= 0; });
   var el = document.getElementById('loc-grid');
+  el.style.display = 'block';  // override the .lg grid — this is a table now
   if (!data.length) { el.innerHTML = '<div class="loading">No locations found</div>'; return; }
-  el.innerHTML = data.map(function(l) {
-    return '<div class="lc"><div class="lid">' + l.name + '</div><div class="lct">' + l.type + '</div></div>';
-  }).join('');
+  el.innerHTML = '<div class="card"><div class="tw"><table>'
+    + '<thead><tr><th>Name</th><th>Type</th><th>Items</th><th></th></tr></thead><tbody>'
+    + data.map(function(l) {
+        var n = l.name.replace(/'/g, "\\'");
+        return '<tr style="cursor:pointer" onclick="openLocationDetail(\'' + n + '\')">'
+          + '<td class="mono" style="color:var(--text)">' + l.name + '</td>'
+          + '<td>' + locTypeBadge(l.type) + '</td>'
+          + '<td class="mono">' + (l.item_count != null ? l.item_count : '–') + '</td>'
+          + '<td><a href="#" onclick="event.stopPropagation();openLocationDetail(\'' + n + '\');return false" style="color:var(--brand);text-decoration:none;font-size:12px">View →</a></td></tr>';
+      }).join('')
+    + '</tbody></table></div></div>';
+}
+
+// Per-location detail overlay: every item currently in this bin (read-only). Serials reuse
+// openItemHistory. Fetches the EXACT-location items endpoint (uncapped, serial-ordered).
+async function openLocationDetail(name) {
+  openModal('modal-location-detail');
+  document.getElementById('locd-title').textContent = name;
+  document.getElementById('locd-sub').textContent = 'Loading…';
+  var body = document.getElementById('locd-body');
+  body.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    var items = await api('/items?location=' + encodeURIComponent(name));
+    var loc = allLocations.find(function(l){ return l.name === name; });
+    document.getElementById('locd-sub').textContent = (loc ? locTypeLabel(loc.type) + ' · ' : '') + items.length + ' item' + (items.length === 1 ? '' : 's');
+    if (!items.length) { body.innerHTML = '<div style="color:var(--muted);padding:14px;text-align:center">No items in this location.</div>'; return; }
+    body.innerHTML = '<div class="tw"><table><thead><tr><th>Serial</th><th>Status</th><th>Notes</th></tr></thead><tbody>'
+      + items.map(function(i) {
+          var sc = i.status === 'STORED' ? 'bg-s' : i.status === 'STAGED_UNLISTED' ? 'bg-p' : i.status === 'SHIPPED' ? 'bg-m' : 'bg-w';
+          return '<tr><td><a href="#" onclick="openItemHistory(\'' + i.serial.replace(/'/g, "\\'") + '\');return false" class="mono" style="color:var(--brand);text-decoration:none">' + i.serial + '</a></td>'
+            + '<td><span class="badge ' + sc + '">' + i.status + '</span></td>'
+            + '<td style="color:var(--muted);font-size:11px">' + (i.notes || '') + '</td></tr>';
+        }).join('')
+      + '</tbody></table></div>';
+  } catch(e) {
+    body.innerHTML = '<div style="color:var(--err);padding:14px">Could not load: ' + e.message + '</div>';
+  }
 }
 
 async function addLocation() {

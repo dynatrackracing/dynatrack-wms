@@ -16,10 +16,10 @@
 | POST | `/api/logout` (87) | token | Deletes the session for the supplied token. |
 | GET | `/api/me` (93) | token | `{username}` or 401. |
 | GET | `/api/health` (101) | **public** | `SELECT 1` → `{ok,db,ts}`; 503 on DB failure. Railway health probe. No version stamp. |
-| GET | `/api/locations` (111) | yes | All locations, ordered by `name`. |
+| GET | `/api/locations` (111) | yes | All locations, ordered by `name`. **Returns `item_count`** per location (LEFT JOIN items + GROUP BY; 0 for empty bins — added 2026-05-29). |
 | POST | `/api/locations` (118) | yes | `{name,type=GENERAL}`; name upper/trimmed; `ON CONFLICT(name) DO NOTHING`. |
 | DELETE | `/api/locations/:name` (130) | yes | Delete a location (items in it get `location=NULL` via FK `ON DELETE SET NULL`). |
-| GET | `/api/items` (138) | yes | Query: `status`, `search` (ILIKE on serial/location), `limit=500`. Ordered `updated_at DESC`. |
+| GET | `/api/items` (138) | yes | Query: `status`, `search` (ILIKE on serial/location), `limit=500`, ordered `updated_at DESC`. **`location` = EXACT match (per-bin detail, added 2026-05-29):** when present → `WHERE location=$1`, **ordered by serial ASC, UNCAPPED** (takes precedence over fuzzy `search`; a bin like SHIPPED holds ~1,724). Existing status/search/limit path unchanged. |
 | GET | `/api/items/count` (161) | yes | Counts: total / STORED / STAGED_UNLISTED / SHIPPED. |
 | GET | `/api/items/:serial` (175) | yes | Single item or 404. |
 | POST | `/api/items` (183) | yes | `{serial,status=STAGED_UNLISTED,location,notes}`; `ON CONFLICT(serial) DO NOTHING`. |

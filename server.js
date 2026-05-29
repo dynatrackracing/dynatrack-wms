@@ -110,7 +110,14 @@ app.get('/api/health', async (req, res) => {
 // ── Locations ─────────────────────────────────────────────────────────────────
 app.get('/api/locations', requireAuth, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM locations ORDER BY name');
+    // All location columns + a per-location item count (LEFT JOIN so empty bins show 0).
+    const { rows } = await pool.query(`
+      SELECT l.*, COUNT(i.serial)::int AS item_count
+        FROM locations l
+        LEFT JOIN items i ON i.location = l.name
+       GROUP BY l.id
+       ORDER BY l.name
+    `);
     res.json(rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -136,21 +143,29 @@ app.delete('/api/locations/:name', requireAuth, async (req, res) => {
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 app.get('/api/items', requireAuth, async (req, res) => {
-  const { status, search, limit = 500 } = req.query;
+  const { status, search, location, limit = 500 } = req.query;
   let q   = 'SELECT * FROM items';
   const p = [];
   const w = [];
 
   if (status) { p.push(status); w.push(`status = $${p.length}`); }
-  if (search) {
+  if (location) {
+    // EXACT location match (per-bin detail view) — takes precedence over the fuzzy search.
+    p.push(location); w.push(`location = $${p.length}`);
+  } else if (search) {
     p.push(`%${search}%`);
     w.push(`(serial ILIKE $${p.length} OR location ILIKE $${p.length})`);
   }
 
   if (w.length) q += ' WHERE ' + w.join(' AND ');
-  q += ' ORDER BY updated_at DESC';
-  p.push(parseInt(limit));
-  q += ` LIMIT $${p.length}`;
+  if (location) {
+    // Exact-location branch: ordered by serial, UNCAPPED (a bin like SHIPPED holds ~1,724).
+    q += ' ORDER BY serial ASC';
+  } else {
+    q += ' ORDER BY updated_at DESC';
+    p.push(parseInt(limit));
+    q += ` LIMIT $${p.length}`;
+  }
 
   try {
     const { rows } = await pool.query(q, p);
