@@ -524,8 +524,9 @@ async function fetchStoreOrders(key, days) {
     }
     const orderBlocks = parseXmlAll(xml, 'Order');
     for (const block of orderBlocks) {
-      // Order-level fields live BEFORE <TransactionArray>; parse them from the head so a
-      // transaction's own <Status>/<ShippedTime>/etc. can't be mistaken for the order's.
+      // <CheckoutStatus> sits BEFORE <TransactionArray>; isolate the head and read it there so a
+      // transaction's own <Status> can't be mistaken for the order's checkout status.
+      // (PaidTime/ShippedTime, by contrast, live AFTER <TransactionArray> — parsed from the whole block below.)
       const head     = block.split('<TransactionArray')[0];
       const checkout = parseXmlValue(head, 'CheckoutStatus');   // inner content of <CheckoutStatus>
       const transBlocks = parseXmlAll(block, 'Transaction');
@@ -550,11 +551,11 @@ async function fetchStoreOrders(key, days) {
         date:   parseXmlValue(block, 'CreatedTime'),
         items,
         // reconcile-only order-level fields (added 2026-05-29) — additive.
-        shippedTime:    parseXmlValue(head, 'ShippedTime') || null,   // order-level ShippedTime
-        paidTime:       parseXmlValue(head, 'PaidTime') || null,
-        checkoutStatus: parseXmlValue(checkout, 'Status') || null,             // CheckoutStatus.Status
-        paymentStatus:  parseXmlValue(checkout, 'eBayPaymentStatus') || null,  // CheckoutStatus.eBayPaymentStatus
-        lastModified:   parseXmlValue(checkout, 'LastModifiedTime') || null,   // change-detection timestamp
+        shippedTime:    parseXmlValue(block, 'ShippedTime') || null,   // after <TransactionArray> — read from whole block
+        paidTime:       parseXmlValue(block, 'PaidTime') || null,      // after <TransactionArray> — read from whole block
+        checkoutStatus: parseXmlValue(checkout, 'Status') || null,             // CheckoutStatus.Status (in head)
+        paymentStatus:  parseXmlValue(checkout, 'eBayPaymentStatus') || null,  // CheckoutStatus.eBayPaymentStatus (in head)
+        lastModified:   parseXmlValue(checkout, 'LastModifiedTime') || null,   // change-detection timestamp (in head)
       });
     }
     const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
