@@ -644,12 +644,17 @@ function normalizeSkuKey(s) {
   return (s || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
 }
 
-// ── eBay order-line reconcile (POPULATE-only) ───────────────────────────────────
-// Upserts fetched eBay order LINES into ebay_order_lines, keyed by OrderLineItemID.
-// Runs as a side-effect of an orders sync (see the /api/ebay/orders routes). It is
-// strictly populate-only: it NEVER touches items or moves and pushes NOTHING to eBay
-// (Rule 25). Upsert-only (never deletes) — so a per-store sync only updates that
-// store's lines, and an order outside the fetch window is left intact.
+// ── eBay order-line reconcile ───────────────────────────────────────────────────
+// Two phases, both as a side-effect of an orders sync (see the /api/ebay/orders routes).
+// Pushes NOTHING to eBay (Rule 25).
+//   PHASE 1 (populate): upsert fetched eBay order LINES into ebay_order_lines, keyed by
+//     OrderLineItemID. Upsert-only (never deletes) — a per-store sync only updates that
+//     store's lines; an order outside the fetch window is left intact.
+//   PHASE 2 (ship-move, added Session 3): for each line now SHIPPED whose matched_serial is
+//     a currently-STORED item, run ONE audited txn mirroring /api/move — items→SHIPPED@'SHIPPED'
+//     location + exactly one moves row (moved_by='ebay-sync'). This is the ONLY place the
+//     reconcile mutates items/moves; /api/pick is NOT involved. Idempotent + monotonic: the
+//     STORED guard means a re-sync re-moves nothing (no double-move, no duplicate moves row).
 //
 //   paid      = OrderStatus=Completed AND CheckoutStatus.Status=Complete
 //               AND eBayPaymentStatus=NoPaymentFailure AND PaidTime present.
@@ -661,7 +666,7 @@ function normalizeSkuKey(s) {
 //   match: sku_norm → STORED items.serial. Exactly 1 → matched_serial; 0 → location_unknown;
 //     >1 → location_unknown AND matched_serial NULL (ambiguous — do NOT guess). Lines are never dropped.
 async function reconcileOrderLines(orderList) {
-  if (!Array.isArray(orderList) || orderList.length === 0) return { upserts: 0, skipped: 0 };
+  if (!Array.isArray(orderList) || orderList.length === 0) return { upserts: 0, skipped: 0, moved: 0 };
 
   // Match candidates: STORED items only, keyed by normalized serial (Rule 8).
   const storedByKey = {};
@@ -712,7 +717,7 @@ async function reconcileOrderLines(orderList) {
     }
   }
 
-  if (rows.length === 0) return { upserts: 0, skipped };
+  if (rows.length === 0) return { upserts: 0, skipped, moved: 0 };
 
   const COLS = ['order_line_item_id','store','ebay_item_id','ebay_transaction_id','sku_raw','sku_norm','title','paid','paid_time','shipped','ebay_shipped_time','matched_serial','location_unknown','disposition','ebay_last_modified'];
   const N = COLS.length;
@@ -752,13 +757,54 @@ async function reconcileOrderLines(orderList) {
       );
     }
     await client.query('COMMIT');
-    return { upserts: rows.length, skipped };
   } catch (e) {
     await client.query('ROLLBACK');
     throw e;
   } finally {
     client.release();
   }
+
+  // ── PHASE 2: ship-move (mirrors /api/move's audited txn) ──────────────────────
+  // Candidates = items still STORED that have at least one SHIPPED line matched to them
+  // (one row per item, so a serial driven by several shipped lines moves exactly once).
+  // Each move is its own BEGIN…COMMIT; the FOR UPDATE re-check of status='STORED' makes
+  // it idempotent — once an item is SHIPPED, later syncs select it no more (no dup moves).
+  let moved = 0;
+  const { rows: toMove } = await pool.query(
+    `SELECT i.serial FROM items i
+      WHERE i.status = 'STORED'
+        AND EXISTS (SELECT 1 FROM ebay_order_lines e
+                     WHERE e.matched_serial = i.serial AND e.disposition = 'SHIPPED')`
+  );
+  if (toMove.length) {
+    const mc = await pool.connect();
+    try {
+      for (const it of toMove) {
+        try {
+          await mc.query('BEGIN');
+          const { rows: lk } = await mc.query("SELECT location, status FROM items WHERE serial = $1 FOR UPDATE", [it.serial]);
+          const cur = lk[0];
+          if (!cur || cur.status !== 'STORED') { await mc.query('ROLLBACK'); continue; }  // guard: only STORED moves
+          // Ensure the destination location row exists (FK target) — mirrors /api/move; no-op in prod.
+          await mc.query("INSERT INTO locations (name, type) VALUES ('SHIPPED','SHIPPED') ON CONFLICT (name) DO NOTHING");
+          await mc.query("UPDATE items SET status = 'SHIPPED', location = 'SHIPPED' WHERE serial = $1", [it.serial]);
+          await mc.query(
+            "INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, 'SHIPPED', 'ebay-sync')",
+            [it.serial, cur.location || null]
+          );
+          await mc.query('COMMIT');
+          moved++;
+        } catch (e) {
+          await mc.query('ROLLBACK');
+          console.error('[reconcile][ship-move] failed for', it.serial, ':', e.message);
+        }
+      }
+    } finally {
+      mc.release();
+    }
+  }
+
+  return { upserts: rows.length, skipped, moved };
 }
 
 // GET /api/picklist — both stores' sold-but-unshipped orders, each line joined to the
