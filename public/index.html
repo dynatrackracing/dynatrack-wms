@@ -129,7 +129,12 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   .page { display: none !important; }
   .page.active { display: block !important; }
   .no-print { display: none !important; }
-  .pick-order { break-inside: avoid; page-break-inside: avoid; }
+  /* Pick List: print JUST the clean 3-column sheet */
+  #page-picklist .card { box-shadow: none !important; border: none !important; padding: 0 !important; }
+  #page-picklist .tw { overflow: visible !important; }
+  #page-picklist table { width: 100%; border-collapse: collapse; }
+  #page-picklist th, #page-picklist td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ccc; }
+  #page-picklist tr { break-inside: avoid; page-break-inside: avoid; }
 }
 </style>
 </head>
@@ -356,7 +361,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 <!-- ═══════ PICK LIST ═══════ -->
 <div class="page" id="page-picklist">
   <div class="phr">
-    <div class="ph"><h1>Pick List</h1><p id="picklist-sub">Sold &amp; unshipped — both stores</p></div>
+    <div class="ph"><h1>Pick List</h1><p id="picklist-sub">Items to pick — paid &amp; unshipped</p></div>
     <div style="display:flex;gap:8px" class="no-print">
       <button class="btn btn-s" onclick="loadPickList()">
         <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -368,7 +373,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
       </button>
     </div>
   </div>
-  <div id="picklist-body"><div class="loading">Run a sync? No — click Refresh to load unshipped orders.</div></div>
+  <div id="picklist-body"><div class="loading">Loading pick list…</div></div>
 </div>
 
 <!-- ═══════ ADMIN ═══════ -->
@@ -1135,60 +1140,44 @@ function filterOrders(v) { orderFilter = v; renderOrders(); }
 function filterOrderStatus(s, btn) { document.querySelectorAll('#page-ebay .tab').forEach(function(t){ t.classList.remove('active'); }); btn.classList.add('active'); orderStatus = s; renderOrders(); }
 
 // ── Pick List ────────────────────────────────────────────────────────────────
+// VIEW + PRINT only. Reads the flat NEEDS_PICK list from /api/picklist (server reads
+// ebay_order_lines; the eBay orders sync does all the writing). One row per item:
+// LOCATION · SKU · ITEM DESCRIPTION. location-unknown items are grouped at the bottom.
+function pickRow(l) {
+  return '<tr><td class="mono" style="color:var(--brand)">' + (l.location || '—') + '</td>'
+    + '<td class="mono" style="color:var(--text)">' + (l.sku || '—') + '</td>'
+    + '<td>' + (l.description || '') + '</td></tr>';
+}
 async function loadPickList() {
   setSyncing();
   var host = document.getElementById('picklist-body');
   try {
     var r = await api('/picklist');
-    var orders = r.orders || [];
-    document.getElementById('picklist-sub').textContent = orders.length
-      ? orders.length + ' order(s) to pick · ' + storeCountLabel(r.byStore) + ' · ' + new Date().toLocaleString('en-AU')
-      : 'Sold & unshipped — both stores';
-    if (!orders.length) {
-      host.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:24px">Nothing to pick — no unshipped orders.</div>';
+    var lines = r.lines || [];
+    var located = lines.filter(function(l){ return !l.locationUnknown; });
+    var unknown = lines.filter(function(l){ return l.locationUnknown; });
+    document.getElementById('picklist-sub').textContent = lines.length
+      ? lines.length + ' item(s) to pick · ' + located.length + ' located, ' + unknown.length + ' location unknown · ' + new Date().toLocaleString('en-AU')
+      : 'Items to pick — paid & unshipped';
+    if (!lines.length) {
+      host.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:24px">Nothing to pick — no paid, unshipped items. Sync eBay orders to refresh.</div>';
       setSynced();
       return;
     }
-    host.innerHTML = orders.map(function(o) {
-      var lines = o.lines.map(function(l) {
-        var loc = l.locationUnknown
-          ? '<span class="badge bg-w">location unknown</span>'
-          : '<span class="mono" style="color:var(--brand)">' + (l.location || '—') + '</span>';
-        var action = l.serial
-          ? '<button class="btn btn-p no-print" style="font-size:11px;padding:5px 10px" onclick="markPicked(\'' + l.serial + '\', this)">Mark picked</button>'
-          : '<span style="font-size:11px;color:var(--muted)">no WMS item</span>';
-        return '<tr><td>' + loc + '</td>'
-          + '<td class="mono" style="color:var(--text)">' + (l.serial || '—') + '</td>'
-          + '<td class="mono" style="color:var(--brand)">' + (l.sku || '—') + '</td>'
-          + '<td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (l.title || '') + '</td>'
-          + '<td class="mono">' + l.qty + '</td>'
-          + '<td class="no-print">' + action + '</td></tr>';
-      }).join('');
-      return '<div class="card pick-order" style="margin-bottom:16px">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
-        + '<div style="font-weight:600">' + o.buyer + ' &nbsp;' + storeBadge(o.store) + '</div>'
-        + '<div class="mono" style="font-size:12px;color:var(--muted)">Order ' + o.id + ' · ' + (o.date ? new Date(o.date).toLocaleDateString('en-AU') : '') + '</div>'
-        + '</div>'
-        + '<div class="tw"><table><thead><tr><th style="width:120px">Location</th><th style="width:120px">Serial</th><th style="width:110px">SKU</th><th>Item</th><th style="width:50px">Qty</th><th class="no-print" style="width:120px">Action</th></tr></thead><tbody>'
-        + lines + '</tbody></table></div></div>';
-    }).join('');
+    var body = located.map(pickRow).join('');
+    if (unknown.length) {
+      body += '<tr><td colspan="3" style="font-weight:700;color:var(--muted);padding-top:16px">Location unknown — '
+        + unknown.length + ' item(s) · no WMS match, locate manually</td></tr>';
+      body += unknown.map(pickRow).join('');
+    }
+    host.innerHTML = '<div class="card"><div class="tw"><table class="pl-table">'
+      + '<thead><tr><th style="width:150px">Location</th><th style="width:140px">SKU</th><th>Item Description</th></tr></thead>'
+      + '<tbody>' + body + '</tbody></table></div></div>';
     setSynced();
   } catch(e) {
     setSyncErr(e);
     showToast('Pick list error: ' + e.message, true);
     host.innerHTML = '<div class="card" style="text-align:center;color:var(--err);padding:24px">Could not load the pick list: ' + e.message + '</div>';
-  }
-}
-
-async function markPicked(serial, btn) {
-  if (btn) { btn.disabled = true; btn.textContent = 'Picking…'; }
-  try {
-    await api('/pick', { method: 'POST', body: { serial: serial } });
-    showToast('Picked ' + serial + ' → SHIPPED');
-    loadPickList();  // re-render so the picked line/order drops off
-  } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Mark picked'; }
-    showToast('Pick failed: ' + e.message, true);
   }
 }
 
