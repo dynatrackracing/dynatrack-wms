@@ -582,6 +582,17 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 </div>
 
+<!-- ITEM HISTORY (read-only overlay; reuses the modal pattern — NOT a .page nav section) -->
+<div class="modal-bg" id="modal-item-history">
+  <div class="modal" style="max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0">Item History</h2>
+      <button class="btn btn-s" onclick="closeModal('modal-item-history')">Close</button>
+    </div>
+    <div id="ih-body" style="max-height:62vh;overflow-y:auto"><div class="loading">Loading…</div></div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast">
   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -744,6 +755,65 @@ document.querySelectorAll('.modal-bg').forEach(function(m) {
 function openAddLocation() { document.getElementById('new-loc-name').value=''; openModal('modal-add-location'); setTimeout(function(){ document.getElementById('new-loc-name').focus(); },100); }
 function openAddItem() { document.getElementById('new-item-serial').value=''; openModal('modal-add-item'); setTimeout(function(){ document.getElementById('new-item-serial').focus(); },100); }
 function openAddSeq() { document.getElementById('new-seq-prefix').value=''; openModal('modal-add-seq'); setTimeout(function(){ document.getElementById('new-seq-prefix').focus(); },100); }
+
+// ── Item History (read-only overlay) ───────────────────────────────────────────
+// Reusable v1 entry point (wired from Inventory serials; Health/Shipped/Pick List can wire later).
+// Reads GET /api/items/:serial + GET /api/moves?serial=...&limit=1000 — no mutation, no eBay call.
+function humanizeMover(m) {
+  if (m === 'import-baseline') return 'Imported (baseline)';
+  if (m === 'ebay-sync')       return 'Shipped (eBay sync)';
+  return m || 'unknown';
+}
+async function openItemHistory(serial) {
+  openModal('modal-item-history');
+  var body = document.getElementById('ih-body');
+  body.innerHTML = '<div class="loading">Loading…</div>';
+  var item;
+  try {
+    item = await api('/items/' + encodeURIComponent(serial));
+  } catch(e) {
+    body.innerHTML = '<div style="color:var(--muted);padding:14px;text-align:center">Item <span class="mono">' + serial + '</span> not found.</div>';
+    return;
+  }
+  try {
+    var moves = await api('/moves?serial=' + encodeURIComponent(serial) + '&limit=1000');
+    var sc = item.status === 'STORED' ? 'bg-s' : item.status === 'STAGED_UNLISTED' ? 'bg-p' : item.status === 'SHIPPED' ? 'bg-m' : 'bg-w';
+    var intake  = item.intake_date ? new Date(item.intake_date).toLocaleDateString('en-AU') : 'unknown (legacy)';
+    var created = item.created_at  ? new Date(item.created_at).toLocaleString('en-AU') : '—';
+    var header = '<div style="margin-bottom:16px">'
+      + '<div class="mono" style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:10px">' + item.serial
+      + ' <span class="badge ' + sc + '" style="font-family:Plus Jakarta Sans,sans-serif">' + item.status + '</span></div>'
+      + '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:12px">'
+      + '<span style="color:var(--muted)">Location</span><span class="mono" style="color:var(--text)">' + (item.location || '—') + '</span>'
+      + '<span style="color:var(--muted)">Intake date</span><span style="color:var(--text)">' + intake + '</span>'
+      + '<span style="color:var(--muted)">Created</span><span style="color:var(--text)">' + created + '</span>'
+      + '<span style="color:var(--muted)">Notes</span><span style="color:var(--text)">' + (item.notes || '—') + '</span>'
+      + '</div></div>';
+    var evs = (moves || []).slice().reverse();  // API returns newest-first; show oldest → newest
+    var timeline;
+    if (!evs.length) {
+      timeline = '<div style="border-top:1px solid var(--border);padding-top:12px;color:var(--muted);font-size:12px">No movement history recorded.</div>';
+    } else {
+      timeline = '<div style="border-top:1px solid var(--border);padding-top:12px">'
+        + '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">Timeline</div>'
+        + evs.map(function(m, idx) {
+            var when  = m.moved_at ? new Date(m.moved_at).toLocaleString('en-AU') : '';
+            var route = (m.from_location || '—') + ' → ' + (m.to_location || '—');
+            var tags  = '';
+            if (idx === 0)                  tags += ' <span class="badge bg-b" style="font-size:9px;padding:1px 6px">Intake</span>';
+            if (m.to_location === 'SHIPPED') tags += ' <span class="badge bg-m" style="font-size:9px;padding:1px 6px">Shipped</span>';
+            return '<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">'
+              + '<div class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;min-width:128px">' + when + '</div>'
+              + '<div style="flex:1"><div class="mono" style="font-size:12px;color:var(--text)">' + route + '</div>'
+              + '<div style="font-size:11px;color:var(--muted)">' + humanizeMover(m.moved_by) + tags + '</div></div></div>';
+          }).join('')
+        + '</div>';
+    }
+    body.innerHTML = header + timeline;
+  } catch(e) {
+    body.innerHTML = '<div style="color:var(--err);padding:14px">Could not load history: ' + e.message + '</div>';
+  }
+}
 
 // ═══════════════════════════════════════════════════════
 //  DASHBOARD
@@ -985,7 +1055,7 @@ async function loadInventory(status) {
     if (!items.length) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:18px">No items found</td></tr>'; setSynced(); return; }
     tb.innerHTML = items.map(function(i) {
       var sc = i.status === 'STORED' ? 'bg-s' : i.status === 'STAGED_UNLISTED' ? 'bg-p' : i.status === 'SHIPPED' ? 'bg-m' : 'bg-w';
-      return '<tr><td class="mono" style="color:var(--text)">' + i.serial + '</td>'
+      return '<tr><td class="mono"><a href="#" onclick="openItemHistory(\'' + i.serial.replace(/'/g, "\\'") + '\');return false" style="color:var(--brand);text-decoration:none" title="View item history">' + i.serial + '</a></td>'
         + '<td><span class="badge ' + sc + '">' + i.status + '</span></td>'
         + '<td class="mono">' + (i.location||'–') + '</td>'
         + '<td style="color:var(--muted);font-size:11px">' + (i.notes||'') + '</td>'
