@@ -507,6 +507,7 @@ async function fetchStoreOrders(key, days) {
   let page = 1;
   while (true) {
     const xml = await ebayCall(key, 'GetOrders', `
+      <DetailLevel>ReturnAll</DetailLevel>
       <CreateTimeFrom>${fromDate}</CreateTimeFrom>
       <CreateTimeTo>${new Date().toISOString()}</CreateTimeTo>
       <OrderRole>Seller</OrderRole>
@@ -523,12 +524,21 @@ async function fetchStoreOrders(key, days) {
     }
     const orderBlocks = parseXmlAll(xml, 'Order');
     for (const block of orderBlocks) {
+      // Order-level fields live BEFORE <TransactionArray>; parse them from the head so a
+      // transaction's own <Status>/<ShippedTime>/etc. can't be mistaken for the order's.
+      const head     = block.split('<TransactionArray')[0];
+      const checkout = parseXmlValue(head, 'CheckoutStatus');   // inner content of <CheckoutStatus>
       const transBlocks = parseXmlAll(block, 'Transaction');
       const items = transBlocks.map(t => ({
         title: parseXmlValue(t, 'Title'),
         sku:   parseXmlValue(t, 'SKU') || parseXmlValue(t, 'SellerSKU'),
         qty:   parseInt(parseXmlValue(t, 'QuantityPurchased') || '1'),
         price: parseFloat(parseXmlValue(t, 'TransactionPrice') || '0'),
+        // Pick List / Shipped reconcile (added 2026-05-29) — additive; /api/picklist ignores these.
+        orderLineItemId: parseXmlValue(t, 'OrderLineItemID'),
+        itemId:          parseXmlValue(t, 'ItemID'),
+        transactionId:   parseXmlValue(t, 'TransactionID'),
+        lineShippedTime: parseXmlValue(t, 'ShippedTime'),       // per-line ShippedTime (partial shipments)
       }));
       orders.push({
         store:  key,
@@ -539,6 +549,12 @@ async function fetchStoreOrders(key, days) {
         total:  parseFloat(parseXmlValue(block, 'Total') || '0'),
         date:   parseXmlValue(block, 'CreatedTime'),
         items,
+        // reconcile-only order-level fields (added 2026-05-29) — additive.
+        shippedTime:    parseXmlValue(head, 'ShippedTime') || null,   // order-level ShippedTime
+        paidTime:       parseXmlValue(head, 'PaidTime') || null,
+        checkoutStatus: parseXmlValue(checkout, 'Status') || null,             // CheckoutStatus.Status
+        paymentStatus:  parseXmlValue(checkout, 'eBayPaymentStatus') || null,  // CheckoutStatus.eBayPaymentStatus
+        lastModified:   parseXmlValue(checkout, 'LastModifiedTime') || null,   // change-detection timestamp
       });
     }
     const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
@@ -569,7 +585,12 @@ app.get('/api/ebay/orders', requireAuth, async (req, res) => {
   const orders = results.flatMap(r => r.orders);
   const byStore = {}, errors = {};
   results.forEach(r => { byStore[r.store] = r.orders.length; if (r.error) errors[r.store] = r.error; });
-  res.json({ orders, count: orders.length, byStore, errors, fetched: new Date().toISOString() });
+  // Populate ebay_order_lines as a side-effect of the sync (Rule 25 read-only to eBay; populate-only).
+  // Isolated: a reconcile failure must never break the orders sync the warehouse depends on.
+  let reconcile = null;
+  try { reconcile = await reconcileOrderLines(orders); }
+  catch (e) { errors.reconcile = e.message; console.error('[reconcile] /api/ebay/orders failed:', e.message); }
+  res.json({ orders, count: orders.length, byStore, errors, reconcile, fetched: new Date().toISOString() });
 });
 
 app.get('/api/ebay/listings', requireAuth, async (req, res) => {
@@ -607,7 +628,11 @@ app.get('/api/ebay/:store/orders', requireAuth, async (req, res) => {
   try {
     const days = parseInt(req.query.days || '90');
     const orders = await fetchStoreOrders(s.key, days);
-    res.json({ store: s.key, orders, count: orders.length, fetched: new Date().toISOString() });
+    // Populate ebay_order_lines for this store (upsert-only — leaves other stores' lines intact).
+    let reconcile = null;
+    try { reconcile = await reconcileOrderLines(orders); }
+    catch (e) { console.error('[reconcile] /api/ebay/' + s.key + '/orders failed:', e.message); }
+    res.json({ store: s.key, orders, count: orders.length, reconcile, fetched: new Date().toISOString() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -616,6 +641,123 @@ app.get('/api/ebay/:store/orders', requireAuth, async (req, res) => {
 // (normalizeSkuKey inside loadInventoryHealth in public/index.html). Centralize later.
 function normalizeSkuKey(s) {
   return (s || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
+}
+
+// ── eBay order-line reconcile (POPULATE-only) ───────────────────────────────────
+// Upserts fetched eBay order LINES into ebay_order_lines, keyed by OrderLineItemID.
+// Runs as a side-effect of an orders sync (see the /api/ebay/orders routes). It is
+// strictly populate-only: it NEVER touches items or moves and pushes NOTHING to eBay
+// (Rule 25). Upsert-only (never deletes) — so a per-store sync only updates that
+// store's lines, and an order outside the fetch window is left intact.
+//
+//   paid      = OrderStatus=Completed AND CheckoutStatus.Status=Complete
+//               AND eBayPaymentStatus=NoPaymentFailure AND PaidTime present.
+//   shipped   = order-level ShippedTime present OR this line's Transaction.ShippedTime present.
+//   cancelled = OrderStatus Cancelled/CancelPending, OR a refund flipping a paid order to Incomplete.
+//   disposition: shipped→SHIPPED; else cancelled→CANCELLED; else paid→NEEDS_PICK; else skip (unpaid/open).
+//     MONOTONIC on conflict: a row already SHIPPED/CANCELLED/DISMISSED is never pulled back to
+//     NEEDS_PICK, and DISMISSED (a manual decision) is never overwritten by the sync.
+//   match: sku_norm → STORED items.serial. Exactly 1 → matched_serial; 0 → location_unknown;
+//     >1 → location_unknown AND matched_serial NULL (ambiguous — do NOT guess). Lines are never dropped.
+async function reconcileOrderLines(orderList) {
+  if (!Array.isArray(orderList) || orderList.length === 0) return { upserts: 0, skipped: 0 };
+
+  // Match candidates: STORED items only, keyed by normalized serial (Rule 8).
+  const storedByKey = {};
+  const { rows: storedRows } = await pool.query("SELECT serial FROM items WHERE status = 'STORED'");
+  for (const r of storedRows) {
+    const k = normalizeSkuKey(r.serial);
+    (storedByKey[k] = storedByKey[k] || []).push(r.serial);
+  }
+
+  const rows = [];
+  let skipped = 0;
+  for (const o of orderList) {
+    const orderStatus = o.status || '';
+    const paidTimePresent = !!o.paidTime;
+    const paid = orderStatus === 'Completed'
+              && o.checkoutStatus === 'Complete'
+              && o.paymentStatus === 'NoPaymentFailure'
+              && paidTimePresent;
+    const cancelledOrder = orderStatus === 'Cancelled' || orderStatus === 'CancelPending'
+              || (o.checkoutStatus === 'Incomplete' && paidTimePresent);  // refund flipped a paid order back to Incomplete
+
+    for (const line of (o.items || [])) {
+      const oli = line.orderLineItemId
+        || (line.itemId && line.transactionId ? `${line.itemId}-${line.transactionId}` : '');
+      if (!oli) { skipped++; continue; }  // no stable per-line key → skip (never invent a PK)
+
+      const lineShipped  = (o.shipped === true) || !!line.lineShippedTime;
+      const shippedTime  = line.lineShippedTime || o.shippedTime || null;
+
+      let disposition;
+      if (lineShipped)         disposition = 'SHIPPED';
+      else if (cancelledOrder) disposition = 'CANCELLED';
+      else if (paid)           disposition = 'NEEDS_PICK';
+      else { skipped++; continue; }  // unpaid/open checkout, not shipped, not cancelled → not actionable yet
+
+      const skuNorm = normalizeSkuKey(line.sku) || null;
+      const cands   = skuNorm ? (storedByKey[skuNorm] || []) : [];
+      let matchedSerial = null, locationUnknown;
+      if (cands.length === 1) { matchedSerial = cands[0]; locationUnknown = false; }
+      else                    { matchedSerial = null;     locationUnknown = true;  }  // 0 or >1 → flag, don't guess
+
+      rows.push([
+        oli, o.store, line.itemId || '', line.transactionId || '',
+        line.sku || null, skuNorm, line.title || null,
+        paid, o.paidTime || null, lineShipped, shippedTime,
+        matchedSerial, locationUnknown, disposition, o.lastModified || null,
+      ]);
+    }
+  }
+
+  if (rows.length === 0) return { upserts: 0, skipped };
+
+  const COLS = ['order_line_item_id','store','ebay_item_id','ebay_transaction_id','sku_raw','sku_norm','title','paid','paid_time','shipped','ebay_shipped_time','matched_serial','location_unknown','disposition','ebay_last_modified'];
+  const N = COLS.length;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const CHUNK = 500;
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const tuples = chunk.map((_, idx) => '(' + Array.from({ length: N }, (_, j) => `$${idx * N + j + 1}`).join(',') + ')');
+      const params = chunk.flat();
+      await client.query(
+        `INSERT INTO ebay_order_lines (${COLS.join(',')})
+         VALUES ${tuples.join(',')}
+         ON CONFLICT (order_line_item_id) DO UPDATE SET
+           store               = EXCLUDED.store,
+           ebay_item_id        = EXCLUDED.ebay_item_id,
+           ebay_transaction_id = EXCLUDED.ebay_transaction_id,
+           sku_raw             = EXCLUDED.sku_raw,
+           sku_norm            = EXCLUDED.sku_norm,
+           title               = COALESCE(EXCLUDED.title, ebay_order_lines.title),
+           paid                = ebay_order_lines.paid OR EXCLUDED.paid,
+           paid_time           = COALESCE(EXCLUDED.paid_time, ebay_order_lines.paid_time),
+           shipped             = ebay_order_lines.shipped OR EXCLUDED.shipped,
+           ebay_shipped_time   = COALESCE(EXCLUDED.ebay_shipped_time, ebay_order_lines.ebay_shipped_time),
+           matched_serial      = COALESCE(EXCLUDED.matched_serial, ebay_order_lines.matched_serial),
+           location_unknown    = (COALESCE(EXCLUDED.matched_serial, ebay_order_lines.matched_serial) IS NULL),
+           disposition         = CASE
+             WHEN ebay_order_lines.disposition = 'DISMISSED' THEN 'DISMISSED'
+             WHEN ebay_order_lines.disposition IN ('SHIPPED','CANCELLED') AND EXCLUDED.disposition = 'NEEDS_PICK'
+               THEN ebay_order_lines.disposition
+             ELSE EXCLUDED.disposition
+           END,
+           ebay_last_modified  = COALESCE(EXCLUDED.ebay_last_modified, ebay_order_lines.ebay_last_modified),
+           last_synced         = NOW()`,
+        params
+      );
+    }
+    await client.query('COMMIT');
+    return { upserts: rows.length, skipped };
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 // GET /api/picklist — both stores' sold-but-unshipped orders, each line joined to the
