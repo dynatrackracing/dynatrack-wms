@@ -11,6 +11,32 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 13:53 UTC — Pick List / Shipped rework, Session 3 of 5: ship-move wired INTO the reconcile (the S2-deferred item mutation)
+
+**Single deliverable:** when the reconcile detects an order line is SHIPPED and its matched WMS item is still STORED, it now moves that item STORED→SHIPPED. **Backend only. Triggered by the reconcile, NOT `/api/pick`** (which was left completely untouched — it's slated for removal in the view+print redesign). No Pick List UI work this session. eBay read-only (Rule 25).
+
+### Diagnose-first (Rule 1)
+Re-read `reconcileOrderLines` and `POST /api/move` (mirrored its exact audited `BEGIN…COMMIT`: select item → ensure destination location → update item → insert ONE `moves` row).
+
+### STEP 1 — read-only preview (reported before any write)
+Listed exactly the items that would move on first activation: **106 distinct STORED items** (driven by 109 SHIPPED lines; 3 serials had 2 driving lines each — each moves once). Every row had a real shelf location, correct SKU→serial normalization (e.g. `CLU0864R`→`CLU0864`, `ECU0245V`→`ECU0245`), a valid `OrderLineItemID`, and a real `ebay_shipped_time` (Mar–May 2026). These are items that sold+shipped on eBay but were still STORED from the 2026-05-27 baseline import. Bounded + sane → proceeded.
+
+### STEP 2 — built (server.js only): `reconcileOrderLines` Phase 2
+After the Phase-1 upsert commits, a **ship-move pass**: candidates = items still `STORED` that have ≥1 `SHIPPED` line matched to them (one row per item). For each, ONE audited txn mirroring `/api/move`: `SELECT … FOR UPDATE` re-check `status='STORED'` (guard); ensure `'SHIPPED'` location row exists (FK target, no-op in prod); `UPDATE items SET status='SHIPPED', location='SHIPPED'`; INSERT one `moves` row (`from_location`=prior shelf → `to_location='SHIPPED'`, `moved_by='ebay-sync'`). Authoritative ship time stays on `ebay_order_lines.ebay_shipped_time`; the `moves` row keeps its own insert timestamp. **Idempotent + monotonic:** the STORED guard means a re-sync moves nothing already shipped (no double-move, no dup `moves` row); `location_unknown`/ambiguous lines never move (no `matched_serial`). Reconcile now returns `{upserts, skipped, moved}`.
+
+### Verified live (real syncs against the deployed app, then read-only DB)
+- **SYNC 1 (activation): `moved`=106**; **SYNC 2: `moved`=0** (idempotent — no double-move).
+- items-by-status: **STORED 3337→3231 (−106), SHIPPED 1724→1830 (+106)**.
+- moves: **5061→5167 (+106)**; `moved_by='ebay-sync'` = **106**, **distinct serials = 106** (one row per item; dup-check found **0** serials with >1 ebay-sync row); all 106 `to_location='SHIPPED'`. Moved items now `SHIPPED`@`'SHIPPED'`.
+- Sanity: **0** items left STORED-with-a-SHIPPED-matched-line. `node --check` OK; `/api/health` 200.
+
+**Files touched:** `server.js` (reconcileOrderLines Phase 2 + doc comment; the function is no longer "populate-only"), `SNAPSHOT_ROUTES.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **DB state changed:** 106 items STORED→SHIPPED@SHIPPED + 106 `ebay-sync` moves rows; `ebay_order_lines` re-affirmed (no structural change). Commit `b8f5c6a`. Throwaway preview/sync/read scripts deleted (Anti-rogue C). **`/api/pick`, `/api/picklist`, frontend — untouched.**
+
+**Production status:** `hawkerwms.up.railway.app` healthy. The eBay orders sync now self-heals WMS inventory: anything sold+shipped on eBay gets marked SHIPPED@SHIPPED in WMS automatically. Counts now 544 loc / 5061 items (3231 STORED + 1830 SHIPPED) / 5167 moves / 14 seq. Warehouse still on the old WMS (cutover pending).
+
+### ⏭ Next (rework sessions 4–5)
+**S4:** rebuild the Pick List UI to READ `ebay_order_lines` (disposition=NEEDS_PICK) instead of live-joining; view+print. **S5:** Shipped Items page (reads disposition=SHIPPED + `ebay_shipped_time`). Then **remove `/api/pick`** (its job — shipping items — is now done by the reconcile).
+
 ## 13:40 UTC — Pick List / Shipped rework, Session 2 of 5: sync reconcile POPULATES `ebay_order_lines` (populate-only)
 
 **Single deliverable:** the eBay orders sync now UPSERTs `ebay_order_lines`. **POPULATE-ONLY — no `items.status`/`items.location` mutation, no `moves` rows, no `/api/picklist` or `/api/pick` change.** The live Pick List still renders from live orders exactly as before. eBay stays read-only (Rule 25).
