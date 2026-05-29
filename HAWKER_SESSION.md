@@ -11,6 +11,38 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 16:36 UTC — Fix: exclude sold-out (available-0) eBay listings from Inventory Health
+
+**Single deliverable:** sold-out listings were counted as live inventory in Inventory Health — inflating "eBay Inventory" and dumping phantom rows into "eBay Only." Now excluded from the reconciliation and the count. eBay read-only (Rule 25 — ActiveList only). Server + frontend.
+
+### Diagnose-first (read-only, Rule 1)
+- Server `fetchStoreListings` parsed `qty = QuantityAvailable || Quantity`. Raw ActiveList pull (both stores, read-only) confirmed: **`QuantityAvailable` is present on 100% of listings** (3280/3280 + 532/532) and `available = Quantity − QuantitySold` holds (e.g. Qty 6/Sold 3 → Avail 3). Sold-out (available ≤ 0): **dynatrack 1267 + autolumen 197 = 1464** of 3812. (Because `'0'` is a non-empty string the old `qty` already came out 0 for sold-out — so the inflation was the **frontend reconcile not filtering on qty**, but the `|| Quantity` fallback would be wrong if QA were ever absent.)
+- Frontend `loadInventoryHealth`: `ebayByKey` was built from **all** `ALL_LISTINGS`; `h-ebay-total` = `ALL_LISTINGS.length`; Cross-listed keyed off per-store presence. The Listings page already flags sold-out (`qty 0` muted + a zero-stock filter).
+
+### Built
+- **Server (`fetchStoreListings`):** compute robust `available` = `QuantityAvailable` (present) else `Quantity − QuantitySold`; carry **`available`** on each listing (and `qty` = same value). eBay still read-only.
+- **`mapListing`:** carries `available` through to `ALL_LISTINGS`.
+- **`loadInventoryHealth`:** builds `liveListings = ALL_LISTINGS.filter(available>0)` and reconciles **only** that set — eBay Inventory count, all buckets, and Cross-listed/oversell all on the live set. **`ALL_LISTINGS` left intact** so the eBay Listings page still shows sold-out items. Summary now notes the sold-out count excluded.
+
+### Verified live (Rule 17) — before/after via faithful replication of the bucket math over live data
+| | BEFORE (all) | AFTER (available>0) |
+|---|---|---|
+| **eBay Inventory** | 3812 | **2348** |
+| eBay Only | 1679 | **353** |
+| Matched | 2020 | 1990 |
+| WMS Only | 1207 | 1240 |
+| Duplicate | 0 | 0 |
+| Cross-listed | 3 | **0** |
+
+- 1464 sold-out excluded; **1326 phantom eBay-Only rows removed** (1679→353). The residual **353** are *genuinely live* listings whose SKU matches no STORED serial (uncaptured/staged items + real listing-without-WMS-record) — real signal, not phantoms (the brief's "single/low-double digits" was optimistic; honest result is 353).
+- Matched/WMS-Only shifted only ~1.5%/2.7% ("roughly unchanged"); the ~30 that moved were sold-out listings that had matched a still-STORED item → correctly become WMS Only. Cross-listed 3→0 = false oversell alarms removed (each had a sold-out side).
+- Spot-checks: sold-out `INT3927V` (qty 0/available 0) excluded; live `MOD19325R` (avail 1) → STORED serial `MOD19325` Matched.
+- Post-deploy: served HTML has the `liveListings` filter; `/api/ebay/dynatrack/listings` returns the `available` field (1267 sold-out); `node --check` + inline JS OK; `/api/health` 200.
+
+**Files touched:** `server.js` (listing builder + `available`), `public/index.html` (`mapListing` + Health reconcile filter + summary), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. No DB change. Independent of the (un-built) `ebay_listings` persistence table. Commit `aa74c66`. Throwaway peek/recon/verify scripts deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy. Inventory Health now reflects live sellable inventory only.
+
 ## 15:39 UTC — Fix: Inventory Health blank page (mis-nested `#page-health` inside `#page-admin`)
 
 **Single deliverable:** Inventory Health rendered blank because `#page-health` was **nested inside `#page-admin`** (whose `display:none` when Admin isn't active hid Health too). Frontend only (`public/index.html`); inner content of neither section touched.
