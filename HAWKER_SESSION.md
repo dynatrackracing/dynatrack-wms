@@ -11,6 +11,27 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 17:54 UTC — Scan & Move bug fixes: robust item capture + scannable destination + guards
+
+**Single deliverable:** make a move reliably complete end-to-end in the existing two-panel layout. **Frontend-only** (`public/index.html`); `/api/move` payload unchanged; no layout rebuild, no batch/Scanner-Manual toggle (deferred #6), no schema change; eBay untouched (Rule 25).
+
+### Diagnose-first (Rule 1) — confirmed both symptoms in code
+Panel 1 `#scan-in` had a single `keydown` Enter→`handleScan(value)`; Panel 2 `#loc-filter` only `oninput=filterLocs` (dropdown) + tap `selectLoc`. **Symptom #2:** the destination was **not scannable** — a location scan landed in the still-focused Panel 1, was treated as a new serial, overwrote the staged item, and `doMove` then hit `!selectedLocName`→"Select a destination" (mis-specific). **Symptom #1:** single Enter capture + immediate field-clear races merge/drop fast back-to-back scans. Stable vars confirmed: `scannedSerial`, `scannedIsNew`, `selectedLocName`, `scanLocations[]`; ids `scan-in` / `loc-filter` / `loc-dropdown` / `selected-loc`.
+
+### Fixes (all in the existing layout)
+- **#1 Robust item capture (`#scan-in`):** replaced the lone Enter handler with a **gap timer** (`SCAN_FLUSH_MS`=80): the `input` listener (re)arms a `setTimeout(commitScan, 80)` so it fires once keystrokes stop; Enter/CR→immediate `commitScan` (`e.preventDefault()`). `commitScan` reads+clears the field, stages exactly one serial via `handleScan` (known→stage `scannedSerial`; unknown→`#modal-intake`), and refocuses Panel 1. Fast scans can't merge; an Enter/CR suffix flushes each immediately.
+- **#2 Scannable destination (`#loc-filter`):** added a gap timer + Enter. **`resolveLocInput`** (Enter) = full resolution — exact case-insensitive match→`selectLoc`; else single filtered match→select; else **zero matches→`selectLoc(code)`** (pending dest; `/api/move` auto-creates the row); ambiguous→toast (don't guess). **`commitLocScan`** (gap) resolves **only an exact match**, so manual partial-typing to filter never auto-selects. Tap-select via the dropdown unchanged.
+- **#3 Retain staged item + guards (`doMove`):** already reads the stable `scannedSerial`/`selectedLocName` (never an input) — typing/scanning in Panel 2 can't clear the staged serial. Guards: no serial→"Scan an item first"; serial but no dest→**"Scan or select a destination"** (was "Select a destination"); both→`POST /api/move`→success `resetScan`. `resetScan` now also **clears `#loc-filter` + hides the dropdown** (both inputs) and refocuses Panel 1.
+
+### Verified (Rule 17)
+Served HTML carries `commitScan` / `commitLocScan` / `resolveLocInput` / `SCAN_FLUSH_MS` / the new `input` listeners / "Scan or select a destination"; `node --check` inline JS OK; **all 10 `.page` divs depth-0 siblings**, div balance 304/304; `/api/health` 200. **Functional scanner tests (3 fast serials don't merge; scan-location-into-filter→Move completes with no "scan an item"; tap-select; intake on unknown; guard messages) are Ry's tablet verification** — physical HID scanner + focus + keystroke timing aren't headless-testable.
+
+**Real-world backstop (note for Ry):** configure the Zebra to send a **CR/Enter suffix** per scan — that plus the gap timer makes zero-gap merges impossible. To scan a destination, **tap the FILTER LOCATIONS field first** so the location scan lands in Panel 2 (then it auto-resolves); item scans go to Panel 1.
+
+**Files touched:** `public/index.html` (gap-timer capture, `commitScan`/`commitLocScan`/`resolveLocInput`, `doMove` guard msg, `resetScan` clears both inputs), `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. No server/schema change → SNAPSHOT_ROUTES untouched. Commit `23d8ece`. Throwaway verify script deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy.
+
 ## 17:43 UTC — Locations: Name·Type·Items·View list + per-location detail overlay
 
 **Single deliverable:** render locations as a **list/table** (Name · Type · Items · View, old-WMS layout) and on click open a **detail overlay** of every item in that bin. Additive, read-only; no schema change; eBay untouched (Rule 25).
