@@ -11,6 +11,29 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 18:17 UTC — Bulk Scan & Move: 3-step batch wizard (scan many → one destination, atomic commit)
+
+**Single deliverable:** replaced the two-panel single-move flow with a **3-step batch wizard** (Scan Items → Pick Location → Confirm) that moves/creates ALL scanned items to one destination in a single atomic commit. A 1-item batch = the old single move. Backend (new transactional route) + Scan & Move frontend rebuild. No new `.page`; no schema change; eBay untouched (Rule 25); exactly one `moves` row per item (Rule 13).
+
+### Diagnose-first (Rules 1, E)
+Read the current gap-timer scan code (`commitScan`/`handleScan`/`resolveLocInput`/`commitLocScan`/`doMove`/`resetScan`, `scannedSerial`/`selectedLocName`/`scanLocations`, working-date, `openIntake`/`confirmIntake`) + `POST /api/move` (229) + `POST /api/intake` (264). Grepped every caller of the single-flow fns — all internal to the scan flow + intake modal, so a clean replace was safe. **REUSED** the gap-timer capture and the location-resolve logic; did not reinvent them.
+
+### Built — backend (server.js)
+- **`POST /api/move/batch {to_location, serials:[], intake_date?}`** — ONE transaction, all-or-nothing. Ensures the location row; de-dupes serials; per serial: **existing** → `UPDATE`→`STORED`@to_location + one `'dynatrack'` moves row (prior→to); **unknown** → `INSERT` (`STORED`, `intake_date`=given or `CURRENT_DATE`) + one `'intake'` moves row (NULL→to). 400 on empty inputs. Returns `{moved, created, location}`. Keeps Item-History labels correct (`humanizeMover`: intake/dynatrack). The wizard's Confirm screen is the create gate → creating new items here is reviewed, not silent.
+
+### Built — frontend (public/index.html) — REPLACED the single flow
+- `#page-scan` rebuilt into three toggled panels (`#scan-step-1/2/3`, `showStep`). **Step 1:** `commitScan` (existing gap timer) now **APPENDS** to `batch[]` via `addToBatch` (dedupe→toast; known→status badge; unknown→**NEW** badge, **no intake modal**); `renderBatch` list + per-row remove (`removeFromBatch`) + live count; typed+Enter adds; "Next" enabled at ≥1. **Step 2:** reuses `filterLocs`/`selectLoc`/`commitLocScan`/`resolveLocInput` (scan exact→select / filter+tap / unknown→pending); Back preserves the list. **Step 3:** `goToConfirm` shows "Move X existing, create Y new → LOC", **enumerates the Y new serials**, shows `workingDate`, flags `(was shipped)`; `confirmBatch`→`POST /api/move/batch`→toast + `resetScan` (empty Step 1) + refocus.
+- **Removed** the superseded single-flow pieces: `handleScan`, `doMove`, `openIntake`/`confirmIntake`/`cancelIntake`, and the `#modal-intake` markup. Working-date control kept (stamps new items' `intake_date`).
+
+### Verified (Rule 17)
+- **`POST /api/move/batch` exercised on test serials only** (no real inventory touched): 400 guards (empty `{}`/no-serials/no-to_location → 400); batch 1 create → `moved:0, created:2` (intake_date 2026-05-20 stamped); batch 2 mix → `moved:2, created:1`, moved item's moves = `∅→L1/intake` then `L1→L2/dynatrack` (exactly 2, correct labels); **atomic rollback** — a forced bad-`intake_date` batch `[existing, new]` → 500, the existing item's location **unchanged**, the new serial **not created**, no extra moves row (the whole batch, incl. the location insert, rolled back).
+- Served HTML has `#scan-step-1/2/3` + `confirmBatch`/`addToBatch`/`goToConfirm`; `node --check` server.js + inline JS OK; **all 10 `.page` divs depth-0 siblings**, div balance 304/304; `/api/health` 200.
+- **Test cleanup:** deleted 3 test items + 2 test locations (locations back to 544); synthetic test `moves` retained per Rule 13 (cleared at cutover). **Ry's tablet tests** (scan ~30 fast no-merge, remove a mis-scan, mix new+existing→Confirm counts→commit, 1-item batch, typed entry, unknown serial doesn't interrupt scanning) are the hands-on verification — HID timing/focus aren't headless-testable.
+
+**Files touched:** `server.js` (+`/api/move/batch`), `public/index.html` (3-step wizard; removed single-flow fns + intake modal), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. No schema change. Commit `a8096b7`. Throwaway verify/clean scripts deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy. Scan & Move is now a bulk wizard.
+
 ## 17:54 UTC — Scan & Move bug fixes: robust item capture + scannable destination + guards
 
 **Single deliverable:** make a move reliably complete end-to-end in the existing two-panel layout. **Frontend-only** (`public/index.html`); `/api/move` payload unchanged; no layout rebuild, no batch/Scanner-Manual toggle (deferred #6), no schema change; eBay untouched (Rule 25).
