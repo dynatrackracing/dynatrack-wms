@@ -11,6 +11,30 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 14:42 UTC — Pick List / Shipped rework, Session 5 of 5 (FINAL): Shipped Items page
+
+**Single deliverable:** a new **Shipped Items** page — a searchable, read-only list of shipped items with eBay ship timestamps. Backend route + frontend page + nav entry. No mutation, no eBay call. **This completes the 5-part Pick List / Shipped Items rework.**
+
+### Diagnose-first (Rule 1)
+Matched house style off the **Inventory** page: `.phr` header (h1 + count `<p>`), `.sb` search box with `oninput`, `.card > .tw > table` with `<thead>` + `<tbody id>`; client-side render from a cached array. Confirmed `items`/`ebay_order_lines` columns. Nav = `.ni[data-page]` buttons + `navigate(p)` dispatch.
+
+### Built
+1. **`GET /api/shipped`** (read-only): `items` WHERE `status='SHIPPED'` LEFT JOIN `ebay_order_lines` (`disposition='SHIPPED'`) on `matched_serial`=serial, **DISTINCT ON (serial)** (one row/item, latest ship time). Row = `serial`, `sku` (eBay `sku_raw` where matched, else the serial), `description` (eBay title), `shippedTime` (`ebay_shipped_time`; **null for historical baseline-imported items — NOT backfilled**), `store`. Sorted `shippedTime` DESC NULLS LAST → `{items,count,fetched}`.
+2. **Frontend:** new **"Shipped"** nav entry (after Pick List) + `#page-shipped` — 4-column table **SERIAL · SKU · DESCRIPTION · SHIPPED** (`loadShipped`→`renderShipped`; "—" when no timestamp). Search box (`filterShipped`) filters the cached `SHIPPED_ROWS` **client-side, case-insensitively across serial + sku + description**. `navigate` wires `loadShipped` on open.
+3. No mutation, no eBay call; Pick List + reconcile untouched.
+
+### Verified live (deployed app, read-only)
+- `/api/shipped`: **count=1830** — **106 carry `ebay_shipped_time` + description** (the S3 ship-moved items), **1724 historical show "—"** (sku falls back to serial). Row shape `{serial,sku,description,shippedTime,store}`.
+- Newest rows dated 2026-05-29 (e.g. `FUS3267`, `MOD20660`); SKU shows the eBay suffix variant where it differs (`MOD19300R`, `ECU0245V`). Oldest tail = historical (`RYN00xx`, "—").
+- **Sort:** non-null DESC = true · nulls-last = true. **Case-insensitive search:** `"radio"`→3 description matches; `"mod"`→698; lowercase serials match (`"fus3267"`→FUS3267, `"ecu0245"`→ECU0245V, `"mod20660"`→MOD20660).
+- Note on the brief's `"fus3205"` example: it returns **none — correctly**, because `FUS3205` is a NEEDS_PICK item (confirmed still in `/api/picklist`, absent from `/api/shipped`). The search mechanism is sound; that serial simply isn't shipped.
+- `node --check` server.js OK, inline JS OK, served HTML has the Shipped page + `loadShipped`, `/api/health` 200.
+
+**Files touched:** `server.js` (+`GET /api/shipped`), `public/index.html` (nav + `#page-shipped` + `loadShipped`/`renderShipped`/`filterShipped` + navigate hook), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **No DB change** (read-only route + UI; +78 LOC). Commit `1f4d118`. Throwaway verify scripts deleted. Deploy was slow (~4 min) but landed healthy.
+
+### ✅ Rework COMPLETE (all 5 sessions)
+S1 `ebay_order_lines` table · S2 sync populates it · S3 sync ship-moves matched STORED items → SHIPPED@'SHIPPED' · S4 Pick List = view+print off the table (`/api/pick` removed) · **S5 Shipped Items page.** The eBay orders sync is now the single source: it records lines, ships sold items, and feeds both the Pick List (NEEDS_PICK) and Shipped Items (SHIPPED) views. **Production status:** `hawkerwms.up.railway.app` healthy; 544 loc / 5061 items (3231 STORED + 1830 SHIPPED) / 5167 moves / 14 seq. Warehouse still on the old WMS (cutover pending a final same-day extract+import).
+
 ## 14:28 UTC — Pick List / Shipped rework, Session 4 of 5: Pick List rebuilt as VIEW+PRINT (reads `ebay_order_lines`); `/api/pick` removed
 
 **Single deliverable:** the Pick List is now a clean **view+print** screen backed by `ebay_order_lines` — no item mutation from this page (the eBay sync ships items). Backend route reshape + frontend. eBay read-only (Rule 25).
