@@ -482,14 +482,22 @@ async function fetchStoreListings(key) {
     }
     const itemBlocks = parseXmlAll(xml, 'ItemID').length ? parseXmlAll(xml, 'Item') : [];
     for (const block of itemBlocks) {
+      // Available-to-sell quantity. ActiveList returns <QuantityAvailable>; if a future detail
+      // level omits it, fall back to Quantity − SellingStatus.QuantitySold. A sold one-of-one is
+      // Quantity 1 / Sold 1 / available 0; a live one is Quantity 1 / Sold 0 / available 1.
+      const quantity  = parseInt(parseXmlValue(block, 'Quantity') || '0');
+      const sold      = parseInt(parseXmlValue(block, 'QuantitySold') || '0');  // SellingStatus.QuantitySold
+      const qaRaw     = parseXmlValue(block, 'QuantityAvailable');
+      const available = qaRaw !== '' ? parseInt(qaRaw || '0') : Math.max(0, quantity - sold);
       listings.push({
-        store:   key,
-        itemId:  parseXmlValue(block, 'ItemID'),
-        sku:     parseXmlValue(block, 'SKU') || parseXmlValue(block, 'SellerSKU'),
-        title:   parseXmlValue(block, 'Title'),
-        price:   parseFloat(parseXmlValue(block, 'CurrentPrice') || parseXmlValue(block, 'StartPrice') || '0'),
-        qty:     parseInt(parseXmlValue(block, 'QuantityAvailable') || parseXmlValue(block, 'Quantity') || '0'),
-        url:     parseXmlValue(block, 'ViewItemURL'),
+        store:     key,
+        itemId:    parseXmlValue(block, 'ItemID'),
+        sku:       parseXmlValue(block, 'SKU') || parseXmlValue(block, 'SellerSKU'),
+        title:     parseXmlValue(block, 'Title'),
+        price:     parseFloat(parseXmlValue(block, 'CurrentPrice') || parseXmlValue(block, 'StartPrice') || '0'),
+        qty:       available,   // displayed quantity (= available-to-sell)
+        available,              // explicit available-to-sell — Inventory Health excludes sold-out (<=0)
+        url:       parseXmlValue(block, 'ViewItemURL'),
       });
     }
     const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
