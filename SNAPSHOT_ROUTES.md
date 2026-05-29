@@ -25,6 +25,7 @@
 | POST | `/api/items` (183) | yes | `{serial,status=STAGED_UNLISTED,location,notes}`; `ON CONFLICT(serial) DO NOTHING`. |
 | PATCH | `/api/items/:serial` (197) | yes | COALESCE update of status/location/notes. |
 | POST | `/api/move` (214) | yes | **Core scan-and-move.** `{serial,to_location,moved_by=dynatrack}`. Atomic txn: upsert item → `STORED`@to_location, ensure location row exists, insert a `moves` audit row. |
+| POST | `/api/intake` (~244) | yes | **New-item intake** (added 2026-05-29). `{serial, location?, intake_date?, moved_by='intake'}`. Atomic txn mirroring `/api/move` but **create-only**: if the serial exists → **409 `{alreadyExists:true}`** (no overwrite — caller falls back to move). Else INSERT item (`status='STORED'`, `location` or NULL, `intake_date`=given or `CURRENT_DATE`), ensure the location row if given, INSERT one `moves` row (first move = intake; `to_location`=shelf or `'INTAKE'` marker). Returns the created item. Read-only to eBay (Rule 25). |
 | GET | `/api/moves` (244) | yes | Optional `serial`, `limit=50`. Ordered `moved_at DESC`. |
 | GET | `/api/sequences` (258) | yes | All sequences, ordered `prefix`. |
 | POST | `/api/sequences/next/:prefix` (265) | yes | **Atomic** increment (`next_num = next_num + 1 RETURNING`); returns `{prefix,issued}`. Never compute via MAX (rule 10). |

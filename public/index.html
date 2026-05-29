@@ -249,6 +249,11 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
         <input type="text" id="scan-in" placeholder="Scan or type barcode…" autofocus autocomplete="off">
         <p style="font-size:11px;color:var(--muted);margin-top:10px">Scanner auto-submits · or press Enter</p>
       </div>
+      <div id="wd-wrap" style="margin-top:12px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;font-size:12px;flex-wrap:wrap">
+        <label class="fl" style="margin:0">Working date</label>
+        <input type="date" id="working-date" onchange="setWorkingDate(this.value)" style="font-family:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
+        <span id="wd-flag" style="display:none;color:var(--warn);font-weight:700">⚠ Backdated — new items use this date</span>
+      </div>
       <div id="scan-result" style="display:none" class="result-card">
         <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Scanned Item</div>
         <div id="scan-serial" class="mono" style="font-size:17px;font-weight:600;color:var(--text)"></div>
@@ -593,6 +598,20 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 </div>
 
+<!-- NEW-ITEM INTAKE (confirm step for an unknown scanned serial) -->
+<div class="modal-bg" id="modal-intake">
+  <div class="modal">
+    <h2>New part — add to inventory?</h2>
+    <div class="fg"><label class="fl">Serial</label><div id="intake-serial" class="mono" style="font-size:15px;font-weight:600;color:var(--text)"></div></div>
+    <div class="fg"><label class="fl">Location (optional)</label><input class="fi2" id="intake-loc" list="intake-loc-list" placeholder="e.g. FR14 — leave blank if unknown" autocomplete="off"><datalist id="intake-loc-list"></datalist></div>
+    <div class="fg"><label class="fl">Intake date</label><input class="fi2" type="date" id="intake-date"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-s" onclick="cancelIntake()">Cancel</button>
+      <button class="btn btn-p" onclick="confirmIntake()">Add to inventory</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast">
   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -762,6 +781,7 @@ function openAddSeq() { document.getElementById('new-seq-prefix').value=''; open
 function humanizeMover(m) {
   if (m === 'import-baseline') return 'Imported (baseline)';
   if (m === 'ebay-sync')       return 'Shipped (eBay sync)';
+  if (m === 'intake')          return 'Added at intake';
   return m || 'unknown';
 }
 async function openItemHistory(serial) {
@@ -880,6 +900,9 @@ async function dashSearch(v) {
 var scanLocations = [];
 var selectedLocName = '';
 var scannedSerial = '';
+var scannedIsNew = false;              // true when the last scan was an unknown serial (intake, not move)
+function todayStr() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+var workingDate = todayStr();          // sticky batch date for new-item intake; reset to today on reload
 
 async function loadScanLocations() {
   try {
@@ -887,9 +910,55 @@ async function loadScanLocations() {
   } catch(e) {}
 }
 
+// Working-date control: sticky until changed; warns loudly whenever it is NOT today so a
+// backdated batch can never go unnoticed. Reload resets to today (no stale cross-session backdating).
+function setWorkingDate(v) { workingDate = v || todayStr(); refreshWorkingDateStyle(); }
+function refreshWorkingDateStyle() {
+  var wrap = document.getElementById('wd-wrap'), flag = document.getElementById('wd-flag'), inp = document.getElementById('working-date');
+  if (!wrap) return;
+  if (inp && inp.value !== workingDate) inp.value = workingDate;
+  var backdated = workingDate !== todayStr();
+  wrap.style.borderColor = backdated ? 'var(--warn)' : 'var(--border)';
+  wrap.style.background   = backdated ? 'rgba(245,158,11,.08)' : 'transparent';
+  if (flag) flag.style.display = backdated ? 'inline' : 'none';
+}
+(function initWorkingDate(){ var inp = document.getElementById('working-date'); if (inp) inp.value = workingDate; refreshWorkingDateStyle(); })();
+
 document.getElementById('scan-in').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && this.value.trim()) handleScan(this.value.trim());
 });
+
+// ── New-item intake confirm (unknown serial → create explicitly, never silent-upsert) ──
+function openIntake(serial) {
+  document.getElementById('intake-serial').textContent = serial;
+  document.getElementById('intake-loc').value = '';
+  document.getElementById('intake-date').value = workingDate;   // prefill batch date, editable for this one item
+  document.getElementById('intake-loc-list').innerHTML = scanLocations.map(function(l){ return '<option value="' + l.name + '">'; }).join('');
+  openModal('modal-intake');
+  setTimeout(function(){ document.getElementById('intake-loc').focus(); }, 100);
+}
+function cancelIntake() { closeModal('modal-intake'); resetScan(); }   // discard the scan, refocus
+async function confirmIntake() {
+  var serial = document.getElementById('intake-serial').textContent;
+  var loc    = document.getElementById('intake-loc').value.trim();
+  var date   = document.getElementById('intake-date').value || workingDate;
+  setSyncing();
+  try {
+    var r = await api('/intake', { method: 'POST', body: { serial: serial, location: loc || undefined, intake_date: date, moved_by: 'intake' } });
+    closeModal('modal-intake');
+    showToast('Added ' + serial + ' → STORED' + (loc ? ' @ ' + loc : ' (no location)') + ' · ' + date);
+    setSynced();
+    resetScan();
+    loadRecentMoves();
+  } catch(e) {
+    if (/already in inventory/i.test(e.message)) {
+      // Race: someone created it between scan and confirm — fall back, no clobber.
+      closeModal('modal-intake');
+      showToast(serial + ' is already in inventory — re-scan to move it', true);
+      resetScan();
+    } else { setSyncErr(e); showToast('Intake failed: ' + e.message, true); }
+  }
+}
 
 async function handleScan(serial) {
   scannedSerial = serial;
@@ -901,12 +970,15 @@ async function handleScan(serial) {
   document.getElementById('scan-status').innerHTML = '';
   try {
     var item = await api('/items/' + encodeURIComponent(serial));
+    scannedIsNew = false;                                   // known item → normal move flow
     document.getElementById('scan-curloc').textContent = item.location || 'None';
     var sc = item.status === 'STORED' ? 'bg-s' : item.status === 'STAGED_UNLISTED' ? 'bg-p' : 'bg-m';
     document.getElementById('scan-status').innerHTML = '<span class="badge ' + sc + '">' + item.status + '</span>';
   } catch(e) {
+    scannedIsNew = true;                                    // unknown serial → intake confirm, never silent create
     document.getElementById('scan-curloc').textContent = 'New item';
     document.getElementById('scan-status').innerHTML = '<span class="badge bg-w">NEW</span>';
+    openIntake(serial);
   }
 }
 
@@ -931,6 +1003,7 @@ function selectLoc(name) {
 
 async function doMove() {
   if (!scannedSerial) { showToast('Scan an item first', true); return; }
+  if (scannedIsNew) { openIntake(scannedSerial); return; }   // unknown serial → intake confirm, not a silent move-create
   if (!selectedLocName) { showToast('Select a destination', true); return; }
   var btn = document.getElementById('move-btn');
   btn.disabled = true;
@@ -947,6 +1020,7 @@ async function doMove() {
 
 function resetScan() {
   scannedSerial = '';
+  scannedIsNew = false;
   selectedLocName = '';
   document.getElementById('scan-result').style.display = 'none';
   document.getElementById('selected-loc').textContent = '–';

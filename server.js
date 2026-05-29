@@ -240,6 +240,46 @@ app.post('/api/move', requireAuth, async (req, res) => {
   }
 });
 
+// ── New-item intake ─────────────────────────────────────────────────────────
+// POST /api/intake {serial, location?, intake_date?, moved_by} — create a brand-new part
+// (status=STORED) with an explicit intake_date. Mirrors /api/move's audited txn, but it is
+// a CREATE, not an upsert: if the serial already exists it does NOT overwrite — returns 409
+// {alreadyExists:true} so the caller falls back to the move flow (a re-scan can't clobber).
+// The first moves row IS the intake event. Read-only to eBay (Rule 25).
+app.post('/api/intake', requireAuth, async (req, res) => {
+  const { serial, location, intake_date, moved_by = 'intake' } = req.body;
+  if (!serial || !serial.trim()) return res.status(400).json({ error: 'serial required' });
+  const s   = serial.trim();
+  const loc = (location && location.trim()) ? location.trim() : null;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: existing } = await client.query('SELECT serial, status, location FROM items WHERE serial = $1', [s]);
+    if (existing.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'already in inventory', alreadyExists: true, existing: existing[0] });
+    }
+    if (loc) await client.query('INSERT INTO locations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [loc]);
+    const { rows: itemRows } = await client.query(
+      `INSERT INTO items (serial, status, location, intake_date)
+       VALUES ($1, 'STORED', $2, COALESCE($3::date, CURRENT_DATE)) RETURNING *`,
+      [s, loc, intake_date || null]
+    );
+    // First move = the intake event. to_location is the shelf, or the 'INTAKE' marker when none given.
+    await client.query(
+      `INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, NULL, $2, $3)`,
+      [s, loc || 'INTAKE', moved_by]
+    );
+    await client.query('COMMIT');
+    res.status(201).json({ ok: true, item: itemRows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ── Moves log ─────────────────────────────────────────────────────────────────
 app.get('/api/moves', requireAuth, async (req, res) => {
   const { serial, limit = 50 } = req.query;
