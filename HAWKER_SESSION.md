@@ -11,6 +11,35 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 13:40 UTC — Pick List / Shipped rework, Session 2 of 5: sync reconcile POPULATES `ebay_order_lines` (populate-only)
+
+**Single deliverable:** the eBay orders sync now UPSERTs `ebay_order_lines`. **POPULATE-ONLY — no `items.status`/`items.location` mutation, no `moves` rows, no `/api/picklist` or `/api/pick` change.** The live Pick List still renders from live orders exactly as before. eBay stays read-only (Rule 25).
+
+### Diagnose-first (read, Rule 1)
+Read `fetchStoreOrders`, the order-sync paths (frontend `syncEbayOrders`→`/api/ebay/orders`, `syncStore`→`/api/ebay/:store/orders`; there is **no** server-side scheduled sync), `/api/picklist`, `/api/move`+`/api/pick` (audited-txn pattern to mirror in Session 3), and both `normalizeSkuKey` copies (server `s` / frontend `sku` — bodies functionally identical; reused the server one, changed neither).
+
+### What was built (server.js only)
+- **`fetchStoreOrders` extended, additively:** `GetOrders` now sends `DetailLevel=ReturnAll`; each order keeps its existing shape **plus** order-level `paidTime,shippedTime,checkoutStatus,paymentStatus,lastModified` and per-line `orderLineItemId,itemId,transactionId,lineShippedTime`. `/api/picklist`'s consumed shape is untouched.
+- **New `reconcileOrderLines(orders)`** UPSERTs by `order_line_item_id` (falls back to `ItemID-TransactionID`; skips a line with neither). Derives: **paid** = OrderStatus Completed ∧ CheckoutStatus.Status Complete ∧ eBayPaymentStatus NoPaymentFailure ∧ PaidTime; **shipped** = order-level ∨ per-line ShippedTime; **cancelled** = OrderStatus Cancelled/CancelPending ∨ (refund flipping a paid order to Incomplete). **disposition**: shipped→SHIPPED; else cancelled→CANCELLED; else paid→NEEDS_PICK; else skip. **Match** `sku_norm`→STORED serial: 1→`matched_serial`; 0/>1→`location_unknown` (>1 ambiguous, never guesses); never drops lines. **Monotonic ON CONFLICT**: never pulls a SHIPPED/CANCELLED/DISMISSED row back to NEEDS_PICK; DISMISSED never overwritten; `shipped`/`paid` sticky-true; times/title/match COALESCE'd; `last_synced=NOW()`. Chunked (500) in one txn.
+- **Hooked** into `/api/ebay/orders` (all stores) and `/api/ebay/:store/orders` (upsert-only → other stores untouched). Reconcile failure is isolated (`errors.reconcile`) and never breaks the sync.
+
+### Bug found in verification + fixed (honest record)
+First live sync wrote 1922 rows but **`paid=false` on every row → 0 NEEDS_PICK**. Diagnosis (raw-XML peek): I'd parsed order-level fields from the "head" (before `<TransactionArray>`) to avoid transaction contamination — correct for `CheckoutStatus` (which IS in the head) but **`PaidTime`/`ShippedTime` live AFTER `<TransactionArray>`**, so both came back null. Fix: parse those two from the whole block; keep `CheckoutStatus.*` from the head. (`shipped` had been fine — it already read the whole block.)
+
+### Verified live (real sync against the deployed app, then read-only DB)
+Logged into prod, triggered `/api/ebay/orders?days=90`: **1929 orders fetched** (dynatrack 1637 / autolumen 292), no errors, **1928 lines upserted, 1 skipped**. `ebay_order_lines` now:
+- **disposition: NEEDS_PICK 6 · SHIPPED 1849 · CANCELLED 73** (total 1928). paid 1850 · shipped 1849.
+- **NEEDS_PICK (the actionable bucket): 6 — all paid+unshipped; 5 matched to a STORED serial, 1 `location_unknown`** (autolumen MOD19995R, flagged not dropped).
+- **location_unknown 1790** (SHIPPED lines match nothing because their items are no longer STORED — expected); **ambiguous (>1) = 0** (no normalized-serial collisions currently; the path is implemented). null-sku 2. matched 138.
+- Spot-checked rows against eBay item IDs (e.g. `ECU0245V`→serial `ECU0245`); `node --check` OK; `/api/health` 200.
+
+**Files touched:** `server.js` (fetchStoreOrders + reconcileOrderLines + 2 route hooks; +PaidTime fix), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_SCHEMA.md` (table now written, still not read), `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **DB state changed = `ebay_order_lines` rows only** (no items/moves). Commits: `f39a22b` (reconcile) → `19402dd` (PaidTime fix). Throwaway sync/read/peek scripts deleted (Anti-rogue C). No frontend change.
+
+**Production status:** `hawkerwms.up.railway.app` healthy; existing behavior unchanged (reconcile is a transparent side-effect of the orders sync). Items/locations/moves untouched (544/5061/5061/14).
+
+### ⏭ Next (rework sessions 3–5)
+**S3:** rebuild `/api/picklist` (and add a Shipped read) to READ `ebay_order_lines` instead of live-joining; mirror the `/api/move` audited txn so `/api/pick` updates the line's disposition→SHIPPED and (backlog #5) moves the item into the real `'SHIPPED'` location. **S4:** view+print Pick List off the table. **S5:** Shipped Items page.
+
 ## 13:17 UTC — Pick List / Shipped rework, Session 1 of 5: `ebay_order_lines` schema migration (additive; no app-code change)
 
 **Single deliverable:** added the backbone table for the Pick List / Shipped Items rework via a new migration and applied it to live prod. **No `server.js` / `public/index.html` / `/api/picklist` / `/api/pick` changes this session** — the sync that populates this table and the view/print/Shipped-page reads are later sessions (2–5).

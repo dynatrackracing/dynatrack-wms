@@ -51,7 +51,7 @@
 | `printed_at` | TIMESTAMPTZ DEFAULT NOW() | |
 
 ### `ebay_order_lines` — *added by migration `0001-ebay-order-lines.sql` (2026-05-29); NOT in `schema.sql`*
-Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment state survives page refresh and a sync can reconcile against it. Backbone for the Pick List / Shipped Items rework. **Created empty — not yet populated or wired** (the sync + read paths land in later sessions of the rework). eBay listings and live order *headers* are still ephemeral (browser `ALL_LISTINGS` / `ORDERS`); this table is the first persisted eBay data.
+Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment state survives page refresh and a sync can reconcile against it. Backbone for the Pick List / Shipped Items rework. **Populated since 2026-05-29** by `reconcileOrderLines` (server.js) as a side-effect of the eBay orders sync (`/api/ebay/orders`, `/api/ebay/:store/orders`) — see SNAPSHOT_ROUTES. **Not yet READ by any route** (the Pick List still reads live orders via a server-side join; the read paths land in later sessions). eBay listings and live order *headers* remain ephemeral (browser `ALL_LISTINGS` / `ORDERS`); this is the only persisted eBay data.
 | Column | Type | Notes |
 |---|---|---|
 | `order_line_item_id` | TEXT **PK** | eBay `OrderLineItemID` = `"<ItemID>-<TransactionID>"`. **The stable per-line key — never key on `OrderID`** (one order can hold many lines / combined-payment carts). |
@@ -84,7 +84,7 @@ Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment
 `schema.sql` seeds prefixes **INT, EXT, HR, FR, AR** (`ON CONFLICT DO NOTHING`). **Production has 12 sequences** (per data-counts rule 27 / rule 10: INT, MOD, CLU, EXT, ECU, ENG, FUS, DMO, PS, …). Do not treat the seed list as authoritative — it's a fresh-DB starter.
 
 ## Important absences (so future sessions don't hunt for them)
-- **No `ebay_listings` table, no order-*header* table.** eBay listings and order headers are still fetched live by `/api/ebay/*` and held only in the browser (`ALL_LISTINGS`, `ORDERS`) — never written to Postgres. (See SNAPSHOT_ROUTES / SNAPSHOT_FRONTEND.) **Exception:** `ebay_order_lines` (migration 0001) now persists sold-order *lines* — but it is **created empty and not yet read/written by any route** (the Pick List still reads live orders via a server-side join); wiring lands in later sessions of the rework.
+- **No `ebay_listings` table, no order-*header* table.** eBay listings and order headers are still fetched live by `/api/ebay/*` and held only in the browser (`ALL_LISTINGS`, `ORDERS`) — never written to Postgres. (See SNAPSHOT_ROUTES / SNAPSHOT_FRONTEND.) **Exception:** `ebay_order_lines` (migration 0001) persists sold-order *lines* and is now **written** by `reconcileOrderLines` on the orders sync (2026-05-29) — but still **not READ by any route** (the Pick List reads live orders via a server-side join); the read paths land in later sessions of the rework.
 - No Supabase anywhere (rule 7). DB is Railway Postgres via `DATABASE_URL`.
 
 ## Production data baseline (as of 2026-04-02, rule 27)
