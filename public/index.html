@@ -240,42 +240,51 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 
 <!-- ═══════ SCAN & MOVE ═══════ -->
 <div class="page" id="page-scan">
-  <div class="ph"><h1>Scan &amp; Move</h1><p>Works with USB &amp; Bluetooth barcode scanners</p></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:820px">
-    <div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:12px">1 · Scan Item</div>
-      <div class="scan-box">
-        <svg style="width:52px;height:52px;margin:0 auto 14px;opacity:.25;display:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/></svg>
-        <input type="text" id="scan-in" placeholder="Scan or type barcode…" autofocus autocomplete="off">
-        <p style="font-size:11px;color:var(--muted);margin-top:10px">Scanner auto-submits · or press Enter</p>
-      </div>
-      <div id="wd-wrap" style="margin-top:12px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;font-size:12px;flex-wrap:wrap">
+  <div class="ph"><h1>Scan &amp; Move</h1><p id="scan-sub">Scan a shelf of items, then assign them all to one location</p></div>
+  <!-- STEP 1 · Scan Items (append each scan to the batch list) -->
+  <div id="scan-step-1" style="max-width:760px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-size:13px;font-weight:600">1 · Scan Items <span id="batch-count" style="color:var(--muted);font-weight:500">(0)</span></div>
+      <div id="wd-wrap" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:12px;flex-wrap:wrap">
         <label class="fl" style="margin:0">Working date</label>
         <input type="date" id="working-date" onchange="setWorkingDate(this.value)" style="font-family:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
         <span id="wd-flag" style="display:none;color:var(--warn);font-weight:700">⚠ Backdated — new items use this date</span>
       </div>
-      <div id="scan-result" style="display:none" class="result-card">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Scanned Item</div>
-        <div id="scan-serial" class="mono" style="font-size:17px;font-weight:600;color:var(--text)"></div>
-        <div style="display:flex;gap:14px;margin-top:10px">
-          <div><div style="font-size:10px;color:var(--muted)">Current Location</div><div id="scan-curloc" class="mono" style="font-size:12px;color:var(--text2)">–</div></div>
-          <div><div style="font-size:10px;color:var(--muted)">Status</div><div id="scan-status"></div></div>
-        </div>
-      </div>
     </div>
-    <div>
-      <div style="font-size:13px;font-weight:600;margin-bottom:12px">2 · Select Destination</div>
-      <div class="fg">
-        <label class="fl">Filter locations</label>
-        <input class="fi2" id="loc-filter" placeholder="e.g. FR14, AR01…" oninput="filterLocs(this.value)" autocomplete="off">
-        <div id="loc-dropdown" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;margin-top:4px"></div>
-      </div>
-      <div class="fg"><label class="fl">Selected</label><div id="selected-loc" style="font-family:'DM Mono',monospace;font-size:14px;color:var(--brand);padding:4px 0">–</div></div>
-      <button class="btn btn-p" style="width:100%;justify-content:center;padding:12px;font-size:14px" id="move-btn" onclick="doMove()">
-        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
-        Move Item
-      </button>
-      <button class="btn btn-s" style="width:100%;justify-content:center;margin-top:8px" onclick="resetScan()">Reset</button>
+    <div class="scan-box">
+      <svg style="width:52px;height:52px;margin:0 auto 14px;opacity:.25;display:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/></svg>
+      <input type="text" id="scan-in" placeholder="Scan or type serial, then Enter…" autofocus autocomplete="off">
+      <p style="font-size:11px;color:var(--muted);margin-top:10px">Scanner auto-submits · or press Enter · type a serial for manual entry</p>
+    </div>
+    <div class="card" style="margin-top:14px"><div class="tw"><table><thead><tr><th>Serial</th><th>Status</th><th class="no-print"></th></tr></thead><tbody id="batch-list"><tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No items scanned yet</td></tr></tbody></table></div></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-p" id="to-location-btn" onclick="goToLocation()" disabled>Next: Pick Location →</button>
+      <button class="btn btn-s" onclick="resetScan()">Clear</button>
+    </div>
+  </div>
+
+  <!-- STEP 2 · Pick Location (scan or filter+tap; reuses the resolve logic) -->
+  <div id="scan-step-2" style="display:none;max-width:520px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px">2 · Pick Location <span id="step2-count" style="color:var(--muted);font-weight:500"></span></div>
+    <div class="fg">
+      <label class="fl">Scan or filter location</label>
+      <input class="fi2" id="loc-filter" placeholder="Scan a shelf label, or type to filter…" oninput="filterLocs(this.value)" autocomplete="off">
+      <div id="loc-dropdown" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;margin-top:4px"></div>
+    </div>
+    <div class="fg"><label class="fl">Selected</label><div id="selected-loc" style="font-family:'DM Mono',monospace;font-size:15px;color:var(--brand);padding:4px 0">–</div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-s" onclick="backToScan()">← Back</button>
+      <button class="btn btn-p" id="to-confirm-btn" onclick="goToConfirm()" disabled>Next: Confirm →</button>
+    </div>
+  </div>
+
+  <!-- STEP 3 · Confirm (create gate: enumerates new serials before they exist) -->
+  <div id="scan-step-3" style="display:none;max-width:620px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px">3 · Confirm</div>
+    <div id="confirm-body"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-s" onclick="backToLocation()">← Back</button>
+      <button class="btn btn-p" id="confirm-move-btn" onclick="confirmBatch()">Confirm Move</button>
     </div>
   </div>
   <div class="divider"></div>
@@ -610,20 +619,6 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 </div>
 
-<!-- NEW-ITEM INTAKE (confirm step for an unknown scanned serial) -->
-<div class="modal-bg" id="modal-intake">
-  <div class="modal">
-    <h2>New part — add to inventory?</h2>
-    <div class="fg"><label class="fl">Serial</label><div id="intake-serial" class="mono" style="font-size:15px;font-weight:600;color:var(--text)"></div></div>
-    <div class="fg"><label class="fl">Location (optional)</label><input class="fi2" id="intake-loc" list="intake-loc-list" placeholder="e.g. FR14 — leave blank if unknown" autocomplete="off"><datalist id="intake-loc-list"></datalist></div>
-    <div class="fg"><label class="fl">Intake date</label><input class="fi2" type="date" id="intake-date"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-      <button class="btn btn-s" onclick="cancelIntake()">Cancel</button>
-      <button class="btn btn-p" onclick="confirmIntake()">Add to inventory</button>
-    </div>
-  </div>
-</div>
-
 <!-- TOAST -->
 <div id="toast">
   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -911,8 +906,7 @@ async function dashSearch(v) {
 // ═══════════════════════════════════════════════════════
 var scanLocations = [];
 var selectedLocName = '';
-var scannedSerial = '';
-var scannedIsNew = false;              // true when the last scan was an unknown serial (intake, not move)
+var batch = [];                        // bulk batch: [{serial, status, isNew, loading}] — appended in Step 1
 function todayStr() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
 var workingDate = todayStr();          // sticky batch date for new-item intake; reset to today on reload
 
@@ -936,9 +930,9 @@ function refreshWorkingDateStyle() {
 }
 (function initWorkingDate(){ var inp = document.getElementById('working-date'); if (inp) inp.value = workingDate; refreshWorkingDateStyle(); })();
 
-// Robust item capture (Fix 2026-05-29): a gap timer commits the staged code once keystrokes
-// stop (HID scanners burst <20ms/char then pause), so fast back-to-back scans can't merge/drop;
-// an Enter/CR suffix commits immediately. Stages exactly one serial; refocuses Panel 1.
+// Robust item capture: a gap timer commits the scanned code once keystrokes stop (HID scanners
+// burst <20ms/char then pause), so fast back-to-back scans can't merge/drop; an Enter/CR suffix
+// commits immediately. Each commit APPENDS to the batch (Step 1); refocus keeps the scan rhythm.
 var scanTimer = null, locScanTimer = null;
 var SCAN_FLUSH_MS = 80;                 // within-scan keystrokes <20ms apart; tuned for HID bursts
 function commitScan() {
@@ -946,9 +940,8 @@ function commitScan() {
   var el = document.getElementById('scan-in');
   var code = (el.value || '').trim();
   el.value = '';
-  if (!code) return;
-  handleScan(code);                     // known → stage serial; unknown → intake confirm
-  el.focus();                           // ready for the next item scan (unknown→modal focus wins after its fetch)
+  if (code) addToBatch(code);           // append to batch list (known → status; unknown → NEW row, no modal)
+  el.focus();                           // ready for the next scan
 }
 (function bindScanIn() {
   var el = document.getElementById('scan-in');
@@ -956,58 +949,85 @@ function commitScan() {
   el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); commitScan(); } });
 })();
 
-// ── New-item intake confirm (unknown serial → create explicitly, never silent-upsert) ──
-function openIntake(serial) {
-  document.getElementById('intake-serial').textContent = serial;
-  document.getElementById('intake-loc').value = '';
-  document.getElementById('intake-date').value = workingDate;   // prefill batch date, editable for this one item
-  document.getElementById('intake-loc-list').innerHTML = scanLocations.map(function(l){ return '<option value="' + l.name + '">'; }).join('');
-  openModal('modal-intake');
-  setTimeout(function(){ document.getElementById('intake-loc').focus(); }, 100);
+// ── Bulk batch: scan many items in Step 1 → one destination → confirmed commit ─────────────
+function showStep(n) {
+  document.getElementById('scan-step-1').style.display = n === 1 ? '' : 'none';
+  document.getElementById('scan-step-2').style.display = n === 2 ? '' : 'none';
+  document.getElementById('scan-step-3').style.display = n === 3 ? '' : 'none';
 }
-function cancelIntake() { closeModal('modal-intake'); resetScan(); }   // discard the scan, refocus
-async function confirmIntake() {
-  var serial = document.getElementById('intake-serial').textContent;
-  var loc    = document.getElementById('intake-loc').value.trim();
-  var date   = document.getElementById('intake-date').value || workingDate;
+function renderBatch() {
+  document.getElementById('batch-count').textContent = '(' + batch.length + ')';
+  document.getElementById('to-location-btn').disabled = batch.length === 0;
+  var tb = document.getElementById('batch-list');
+  if (!batch.length) { tb.innerHTML = '<tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No items scanned yet</td></tr>'; return; }
+  tb.innerHTML = batch.map(function(b) {
+    var n = b.serial.replace(/'/g, "\\'");
+    var st = b.loading ? '<span style="color:var(--muted);font-size:11px">…</span>'
+      : b.isNew ? '<span class="badge bg-w">NEW</span>'
+      : '<span class="badge ' + (b.status === 'STORED' ? 'bg-s' : b.status === 'STAGED_UNLISTED' ? 'bg-p' : 'bg-m') + '">' + b.status + '</span>'
+        + (b.status === 'SHIPPED' ? ' <span style="color:var(--warn);font-size:10px">(was shipped)</span>' : '');
+    return '<tr><td class="mono" style="color:var(--text)">' + b.serial + '</td><td>' + st + '</td>'
+      + '<td class="no-print" style="text-align:right"><button class="btn btn-s" style="font-size:11px;padding:3px 9px" onclick="removeFromBatch(\'' + n + '\')" title="Remove">✕</button></td></tr>';
+  }).join('');
+}
+async function addToBatch(serial) {
+  if (batch.some(function(b){ return b.serial === serial; })) { showToast(serial + ' already scanned', true); return; }
+  var entry = { serial: serial, status: null, isNew: false, loading: true };
+  batch.push(entry); renderBatch();                         // optimistic row; resolve known/new below
+  try { var item = await api('/items/' + encodeURIComponent(serial)); entry.status = item.status; entry.isNew = false; }
+  catch(e) { entry.isNew = true; entry.status = null; }     // unknown → NEW badge (NO intake modal — created at commit)
+  entry.loading = false; renderBatch();
+}
+function removeFromBatch(serial) { batch = batch.filter(function(b){ return b.serial !== serial; }); renderBatch(); }
+
+function goToLocation() {
+  if (!batch.length) { showToast('Scan at least one item', true); return; }
+  document.getElementById('step2-count').textContent = '· ' + batch.length + ' item' + (batch.length === 1 ? '' : 's');
+  showStep(2);
+  setTimeout(function(){ document.getElementById('loc-filter').focus(); }, 50);
+}
+function backToScan() { showStep(1); setTimeout(function(){ document.getElementById('scan-in').focus(); }, 50); }
+function backToLocation() { showStep(2); setTimeout(function(){ document.getElementById('loc-filter').focus(); }, 50); }
+function goToConfirm() {
+  if (!selectedLocName) { showToast('Scan or select a destination', true); return; }
+  var created  = batch.filter(function(b){ return b.isNew; });
+  var existing = batch.filter(function(b){ return !b.isNew; });
+  var html = '<div class="card" style="margin-bottom:12px">'
+    + '<div style="font-size:14px;font-weight:600">Move ' + existing.length + ' existing, create ' + created.length + ' new → <span class="mono" style="color:var(--brand)">' + selectedLocName + '</span></div>'
+    + '<div style="font-size:12px;color:var(--muted);margin-top:4px">New items will be stamped intake date <span class="mono">' + workingDate + '</span></div></div>';
+  if (created.length) {
+    html += '<div style="font-size:12px;font-weight:600;margin-bottom:6px">New items to create (' + created.length + ') — review before they exist:</div>'
+      + '<div class="card" style="margin-bottom:12px"><div class="tw"><table><tbody>'
+      + created.map(function(b){ return '<tr><td><span class="badge bg-w" style="margin-right:8px">NEW</span><span class="mono">' + b.serial + '</span></td></tr>'; }).join('')
+      + '</tbody></table></div></div>';
+  }
+  html += '<div style="font-size:12px;color:var(--muted);margin-bottom:6px">All ' + batch.length + ' item(s):</div>'
+    + '<div class="card"><div class="tw"><table><tbody>'
+    + batch.map(function(b){
+        var note = b.isNew ? ' <span class="badge bg-w">NEW</span>'
+          : (b.status === 'SHIPPED' ? ' <span style="color:var(--warn);font-size:11px">(was shipped → back to STORED)</span>' : '');
+        return '<tr><td class="mono">' + b.serial + note + '</td></tr>';
+      }).join('')
+    + '</tbody></table></div></div>';
+  document.getElementById('confirm-body').innerHTML = html;
+  showStep(3);
+}
+async function confirmBatch() {
+  if (!batch.length || !selectedLocName) { showToast('Nothing to confirm', true); return; }
+  var btn = document.getElementById('confirm-move-btn'); btn.disabled = true;
   setSyncing();
   try {
-    var r = await api('/intake', { method: 'POST', body: { serial: serial, location: loc || undefined, intake_date: date, moved_by: 'intake' } });
-    closeModal('modal-intake');
-    showToast('Added ' + serial + ' → STORED' + (loc ? ' @ ' + loc : ' (no location)') + ' · ' + date);
+    var r = await api('/move/batch', { method: 'POST', body: {
+      to_location: selectedLocName,
+      serials: batch.map(function(b){ return b.serial; }),
+      intake_date: workingDate,
+    } });
+    showToast((r.moved + r.created) + ' item(s) → ' + r.location + ' · ' + r.moved + ' moved, ' + r.created + ' created');
     setSynced();
-    resetScan();
+    resetScan();                                            // back to Step 1, empty
     loadRecentMoves();
-  } catch(e) {
-    if (/already in inventory/i.test(e.message)) {
-      // Race: someone created it between scan and confirm — fall back, no clobber.
-      closeModal('modal-intake');
-      showToast(serial + ' is already in inventory — re-scan to move it', true);
-      resetScan();
-    } else { setSyncErr(e); showToast('Intake failed: ' + e.message, true); }
-  }
-}
-
-async function handleScan(serial) {
-  scannedSerial = serial;
-  document.getElementById('scan-in').value = '';
-  var el = document.getElementById('scan-result');
-  el.style.display = 'block';
-  document.getElementById('scan-serial').textContent = serial;
-  document.getElementById('scan-curloc').textContent = '…';
-  document.getElementById('scan-status').innerHTML = '';
-  try {
-    var item = await api('/items/' + encodeURIComponent(serial));
-    scannedIsNew = false;                                   // known item → normal move flow
-    document.getElementById('scan-curloc').textContent = item.location || 'None';
-    var sc = item.status === 'STORED' ? 'bg-s' : item.status === 'STAGED_UNLISTED' ? 'bg-p' : 'bg-m';
-    document.getElementById('scan-status').innerHTML = '<span class="badge ' + sc + '">' + item.status + '</span>';
-  } catch(e) {
-    scannedIsNew = true;                                    // unknown serial → intake confirm, never silent create
-    document.getElementById('scan-curloc').textContent = 'New item';
-    document.getElementById('scan-status').innerHTML = '<span class="badge bg-w">NEW</span>';
-    openIntake(serial);
-  }
+  } catch(e) { setSyncErr(e); showToast('Batch move failed: ' + e.message, true); }
+  btn.disabled = false;
 }
 
 function filterLocs(v) {
@@ -1027,6 +1047,7 @@ function selectLoc(name) {
   document.getElementById('selected-loc').textContent = name;
   document.getElementById('loc-filter').value = '';
   document.getElementById('loc-dropdown').style.display = 'none';
+  var cb = document.getElementById('to-confirm-btn'); if (cb) cb.disabled = false;   // destination set → enable Confirm step
 }
 
 // Scannable destination (Fix 2026-05-29): a location scanned into FILTER LOCATIONS resolves to
@@ -1056,32 +1077,17 @@ function resolveLocInput() {
   el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); resolveLocInput(); } });
 })();
 
-async function doMove() {
-  if (!scannedSerial) { showToast('Scan an item first', true); return; }
-  if (scannedIsNew) { openIntake(scannedSerial); return; }   // unknown serial → intake confirm, not a silent move-create
-  if (!selectedLocName) { showToast('Scan or select a destination', true); return; }
-  var btn = document.getElementById('move-btn');
-  btn.disabled = true;
-  setSyncing();
-  try {
-    await api('/move', { method: 'POST', body: { serial: scannedSerial, to_location: selectedLocName } });
-    showToast('Moved ' + scannedSerial + ' → ' + selectedLocName);
-    setSynced();
-    resetScan();
-    loadRecentMoves();
-  } catch(e) { setSyncErr(e); showToast('Move failed: ' + e.message, true); }
-  btn.disabled = false;
-}
-
+// Reset the whole wizard back to an empty Step 1.
 function resetScan() {
-  scannedSerial = '';
-  scannedIsNew = false;
+  batch = [];
   selectedLocName = '';
-  document.getElementById('scan-result').style.display = 'none';
+  renderBatch();
   document.getElementById('selected-loc').textContent = '–';
   document.getElementById('scan-in').value = '';
   document.getElementById('loc-filter').value = '';
   document.getElementById('loc-dropdown').style.display = 'none';
+  var cb = document.getElementById('to-confirm-btn'); if (cb) cb.disabled = true;
+  showStep(1);
   document.getElementById('scan-in').focus();
 }
 

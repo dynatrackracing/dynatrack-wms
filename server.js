@@ -295,6 +295,58 @@ app.post('/api/intake', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/move/batch {to_location, serials:[], intake_date?} — bulk move/create MANY items to ONE
+// location in a SINGLE transaction (all-or-nothing; rollback on any failure). Per serial: existing →
+// UPDATE to STORED@to_location + one 'dynatrack' moves row (prior → to); unknown → INSERT (STORED,
+// intake_date = working date or CURRENT_DATE) + one 'intake' moves row (NULL → to). Exactly one
+// moves row each (Rule 13). The wizard's Confirm screen is the create gate, so new-item creation
+// here is reviewed, not silent. De-dupes serials. Read-only to eBay (Rule 25).
+app.post('/api/move/batch', requireAuth, async (req, res) => {
+  const { to_location, serials, intake_date, moved_by = 'dynatrack' } = req.body;
+  if (!to_location || !to_location.trim()) return res.status(400).json({ error: 'to_location required' });
+  if (!Array.isArray(serials) || serials.length === 0) return res.status(400).json({ error: 'serials required' });
+  const loc = to_location.trim();
+  const seen = new Set();
+  const list = [];
+  for (const s of serials) { const t = (s || '').trim(); if (t && !seen.has(t)) { seen.add(t); list.push(t); } }
+  if (!list.length) return res.status(400).json({ error: 'no valid serials' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('INSERT INTO locations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [loc]);
+    let moved = 0, created = 0;
+    for (const serial of list) {
+      const { rows } = await client.query('SELECT location FROM items WHERE serial = $1', [serial]);
+      if (rows.length) {
+        await client.query("UPDATE items SET status = 'STORED', location = $1 WHERE serial = $2", [loc, serial]);
+        await client.query(
+          "INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, $3, $4)",
+          [serial, rows[0].location || null, loc, moved_by]
+        );
+        moved++;
+      } else {
+        await client.query(
+          `INSERT INTO items (serial, status, location, intake_date) VALUES ($1, 'STORED', $2, COALESCE($3::date, CURRENT_DATE))`,
+          [serial, loc, intake_date || null]
+        );
+        await client.query(
+          "INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, NULL, $2, 'intake')",
+          [serial, loc]
+        );
+        created++;
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, moved, created, location: loc });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ── Moves log ─────────────────────────────────────────────────────────────────
 app.get('/api/moves', requireAuth, async (req, res) => {
   const { serial, limit = 50 } = req.query;
