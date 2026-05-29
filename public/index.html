@@ -199,6 +199,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <div class="nl">eBay</div>
   <button class="ni" data-page="ebay"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5m12-5l2 5M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"/></svg>Orders</button>
   <button class="ni" data-page="picklist"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>Pick List</button>
+  <button class="ni" data-page="shipped"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M9 12h6"/></svg>Shipped</button>
   <button class="ni" data-page="listings"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6M9 16h4"/></svg>Listings</button>
   <button class="ni" data-page="health"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Inventory Health</button>
   <div class="nl">System</div>
@@ -374,6 +375,15 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     </div>
   </div>
   <div id="picklist-body"><div class="loading">Loading pick list…</div></div>
+</div>
+
+<!-- ═══════ SHIPPED ITEMS ═══════ -->
+<div class="page" id="page-shipped">
+  <div class="phr">
+    <div class="ph"><h1>Shipped Items</h1><p id="shipped-count">Loading…</p></div>
+  </div>
+  <div class="sb"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35"/></svg><input type="text" placeholder="Search serial, SKU, description…" oninput="filterShipped(this.value)"></div>
+  <div class="card"><div class="tw"><table><thead><tr><th>Serial ID</th><th>SKU</th><th>Description</th><th>Shipped</th></tr></thead><tbody id="shipped-table"><tr><td colspan="4" class="loading">Loading…</td></tr></tbody></table></div></div>
 </div>
 
 <!-- ═══════ ADMIN ═══════ -->
@@ -708,6 +718,7 @@ function navigate(p) {
   if (p === 'ebay') { renderOrders(); if (!ORDERS.length) syncEbayOrders(); }
   if (p === 'listings') { renderListings(); if (!ALL_LISTINGS.length) syncEbayListings(); }
   if (p === 'picklist') loadPickList();
+  if (p === 'shipped') loadShipped();
   if (p === 'health') loadInventoryHealth();
   if (p === 'admin') loadAdmin();
 }
@@ -1182,6 +1193,42 @@ async function loadPickList() {
 }
 
 function printPickList() { window.print(); }
+
+// ── Shipped Items (read-only list of SHIPPED items + eBay ship times) ──
+var SHIPPED_ROWS = [];
+var shippedSearch = '';
+async function loadShipped() {
+  setSyncing();
+  var tb = document.getElementById('shipped-table');
+  try {
+    var r = await api('/shipped');
+    SHIPPED_ROWS = r.items || [];
+    renderShipped();
+    setSynced();
+  } catch(e) {
+    setSyncErr(e);
+    showToast('Shipped list error: ' + e.message, true);
+    tb.innerHTML = '<tr><td colspan="4" style="color:var(--err);text-align:center;padding:18px">Could not load: ' + e.message + '</td></tr>';
+  }
+}
+function renderShipped() {
+  var q = (shippedSearch || '').trim().toLowerCase();
+  var rows = !q ? SHIPPED_ROWS : SHIPPED_ROWS.filter(function(r) {
+    return (r.serial || '').toLowerCase().indexOf(q) !== -1
+        || (r.sku || '').toLowerCase().indexOf(q) !== -1
+        || (r.description || '').toLowerCase().indexOf(q) !== -1;
+  });
+  document.getElementById('shipped-count').textContent = rows.length + ' shipped' + (q ? ' (filtered)' : '');
+  var tb = document.getElementById('shipped-table');
+  if (!rows.length) { tb.innerHTML = '<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:18px">No shipped items found</td></tr>'; return; }
+  tb.innerHTML = rows.map(function(r) {
+    return '<tr><td class="mono" style="color:var(--text)">' + r.serial + '</td>'
+      + '<td class="mono" style="color:var(--brand)">' + (r.sku || '–') + '</td>'
+      + '<td style="color:var(--muted)">' + (r.description || '') + '</td>'
+      + '<td class="mono">' + (r.shippedTime ? new Date(r.shippedTime).toLocaleDateString('en-AU') : '—') + '</td></tr>';
+  }).join('');
+}
+function filterShipped(v) { shippedSearch = v; renderShipped(); }
 
 function renderListings() {
   var data = ALL_LISTINGS;

@@ -835,6 +835,37 @@ app.get('/api/picklist', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/shipped — every SHIPPED item + its eBay ship info where matched. Read-only.
+// LEFT JOIN ebay_order_lines (disposition='SHIPPED') by matched_serial: recently-sold items
+// carry sku_raw/title/ebay_shipped_time/store; the historical baseline-imported shipped items
+// have no eBay line → those fields are null (NOT backfilled — the past is the past). DISTINCT ON
+// keeps one row per item (a serial with several shipped lines → its latest ship time).
+app.get('/api/shipped', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT s.serial, s.sku_raw, s.title, s.ebay_shipped_time, s.store
+        FROM (
+          SELECT DISTINCT ON (i.serial)
+                 i.serial, e.sku_raw, e.title, e.ebay_shipped_time, e.store
+            FROM items i
+            LEFT JOIN ebay_order_lines e
+              ON e.matched_serial = i.serial AND e.disposition = 'SHIPPED'
+           WHERE i.status = 'SHIPPED'
+           ORDER BY i.serial, e.ebay_shipped_time DESC NULLS LAST
+        ) s
+       ORDER BY s.ebay_shipped_time DESC NULLS LAST, s.serial
+    `);
+    const items = rows.map(r => ({
+      serial:      r.serial,
+      sku:         r.sku_raw || r.serial,            // eBay SKU where matched, else the serial
+      description: r.title || null,                  // eBay title where matched
+      shippedTime: r.ebay_shipped_time,              // null for historical baseline-imported items
+      store:       r.store || null,
+    }));
+    res.json({ items, count: items.length, fetched: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Stats ─────────────────────────────────────────────────────────────────────
 app.get('/api/stats', requireAuth, async (req, res) => {
   try {
