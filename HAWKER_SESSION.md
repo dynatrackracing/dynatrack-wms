@@ -9,6 +9,75 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-05-29
+
+## 01:37 UTC — Confirmed Workflow & Build Plan (documentation only — no code/schema/DB)
+
+**Single deliverable:** persist the confirmed daily workflow, device/scanner requirement, locked decisions, build backlog, and parked to-dos as the durable reference for the build sessions ahead. **No code, schema, DB writes, or new files this session.** Reconciled with prior follow-up snapshots (this entry's PENDING list supersedes them; old entries left as historical record).
+
+### Confirmed daily workflow
+clean part → photograph it with its SKU → put on a shelf or in a tote (**STORED**) → list on eBay (**done in eBay, not HawkerWMS**) → it sells → **print the pick list** → ship via **ShippingEasy** (separate/manual). **HawkerWMS does NOT integrate with ShippingEasy and does NOT write to eBay** (read-only, Rule 25).
+
+### Device & scanner (cross-cutting requirement for EVERY scan field)
+- Ops run on an **11" HOTWAV R9 Pro rugged Android 14 tablet (1200×1920)**. Existing tablet UI fits — **no handheld/small-screen responsive rework needed**.
+- Input is a **Bluetooth Zebra handheld scanner paired as an HID keyboard** (configured with a **CR/Enter suffix**). Every scan field (Scan & Move both modes, intake, pick, locations) must: capture rapid keystrokes, **fire on the Enter/CR terminator**, **auto-refocus** the field after each scan (batch mode depends on it), and **suppress the Android soft keyboard while keeping focus**.
+
+### Locked decisions
+1. **Staging removed entirely.** Remap existing `STAGED_UNLISTED` → `STORED`, then drop the value from the status set + all UI. **Rule 11 becomes: statuses = `STORED` and `SHIPPED` only.** Remove the Inventory Health "Staging excluded" line + Staging stat card.
+2. **"Shipped" is a LOCATION, not a status** (mirrors old WMS SHIPPED/SHIPPED-1). Use ONE location named **`'SHIPPED'`**. **Revise `POST /api/pick`:** instead of `location=NULL` + sentinel, move the item INTO the `'SHIPPED'` location (status `SHIPPED`, `location='SHIPPED'`, one moves row `to_location='SHIPPED'` — now a REAL location). Ensure the `'SHIPPED'` location row exists. *(Supersedes the sentinel implementation shipped 2026-05-28.)*
+3. **Totes are real and distinct from shelves.** Locations need a **TYPE** (tote vs shelf); dashboard splits **"Items in Totes" vs "Items Stored"** (like old WMS). **Schema change — design AFTER the import diagnosis** reveals how the old data tags totes/shelves.
+4. **Scan & Move needs BOTH** a batch mode (scan many → one destination → confirm) and a single-item mode.
+5. **New-item intake:** scanning an **unknown serial CREATES** the item; **location is OPTIONAL** (a part may be scanned in with no location).
+6. **"Unlisted" section** = a dedicated view of the Inventory Health **WMS-Only** set (on shelf, not on eBay). Caveat: can't distinguish "deliberately unlisted" from "never listed".
+7. **One shared login** (no per-user accounts). **No offline mode.** eBay stays **read-only**.
+
+### New features to build (none built yet)
+- **[HIGH] Fix Locations detail view** — clicking a location must reveal the parts scanned into it (currently broken). Makes the SHIPPED-location "abyss" + tote/shelf browsing usable.
+- **New-item intake** (decision 5). · **Unlisted section** (decision 6).
+- **Scan & Move dual modes + Zebra/BT robustness** (decision 4 + device requirement).
+- **Totes location-type + dashboard split** (decision 3 — post-import). · **Revise pick flow → SHIPPED location** (decision 2).
+- **Soft-archive** (existing Briefs 3a/3b) for removing non-shipped items (damaged/scrapped), history retained — complements the SHIPPED location.
+
+### Parked to-dos
+- Every part needs full **"when + where scanned" history** (esp. imported/uncaptured items).
+- **"More intelligence around sold parts"** (firms up after SHIPPED-location + history land).
+- Centralize the duplicated `normalizeSkuKey`. · Dead serial-infra cleanup. · Hardening (see follow-ups).
+
+### Cutover note
+Warehouse is **STILL on the old WMS**. Prod = the 2026-04-02 seed + test scans only. **Real cutover needs a FINAL same-day extract + import, then stop using the old system.** The upcoming import loads realistic data so we build against the true data shape.
+
+**Files touched:** `HAWKER_SESSION.md` (this entry), `HAWKER_CHANGELOG.md`. No app code, schema, or DB writes.
+
+### ⏭ PENDING FOLLOW-UPS (reconciled — supersedes prior snapshots)
+**Cutover blockers (architect tasks):**
+1. **#2 Hands-on testing** — incl. the 2026-05-28 Pick List mark-picked happy-path + print, on the HOTWAV tablet + Zebra scanner.
+2. **#3 Final same-day extract + import** from the old WMS, then stop using it (cutover).
+
+**Build backlog (rough priority):**
+3. **[HIGH] Fix Locations detail view** (parts-in-location).
+4. **Staging removal** (remap STAGED_UNLISTED→STORED; Rule 11 → STORED/SHIPPED only; drop Staging UI) — decision 1.
+5. **Pick flow → SHIPPED location** (revise POST /api/pick; ensure 'SHIPPED' location) — decision 2; supersedes the current sentinel.
+6. **Scan & Move dual modes + Zebra/BT HID robustness** (all scan fields) — decision 4 + device.
+7. **New-item intake** (create on unknown serial; optional location) — decision 5.
+8. **Unlisted section** (WMS-Only view) — decision 6.
+9. **Totes location-type + dashboard tote/shelf split** — decision 3 (post-import; schema change).
+10. **Soft-archive** non-shipped removals (damaged/scrapped), history retained (Briefs 3a/3b).
+11. **Per-part full scan history** (when + where), esp. imported items.
+12. **"More intelligence around sold parts"** (after SHIPPED-location + history).
+
+**Tech-debt / hardening:**
+13. **Persistent (Postgres) session store** — TOP hardening priority (in-memory Map logs everyone out on each deploy).
+14. **Centralize `normalizeSkuKey`** (server.js + frontend copies must stay byte-identical until then).
+15. **Dead serial-infra cleanup** — orphaned `POST /api/sequences/next/:prefix` + `GET`/`POST /api/print-log`; reconsider the Admin Serial Sequences view (serials minted externally).
+16. **Persist eBay listings server-side** (`ebay_listings`; replaces in-memory `ALL_LISTINGS`).
+17. **Remove the `[Inventory Health]` DIAGNOSTIC console.log** once the blank-page bug is confirmed via real use.
+18. **Retire legacy un-prefixed `TRADING_API_*`** env vars once multi-store is proven stable.
+19. **eBay token-expiry calendar** (two tokens).
+
+*(Folded: the 2026-05-28 "12 location-unknown pick lines" observation → #11/#2; it reflects sold SKUs with no WMS item, expected until the final import. #8 broader Drive cleanup remains open but is low priority post-rename.)*
+
+**Production status:** unchanged — `hawkerwms.up.railway.app` healthy; docs-only, nothing deployed (Railway redeploys on push, no code delta).
+
 # 2026-05-28
 
 ## 23:12 UTC — Build Print & Pick List (sold-but-unshipped → WMS locations, mark-picked → SHIPPED) ✅
