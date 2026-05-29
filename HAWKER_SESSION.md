@@ -11,6 +11,31 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 13:17 UTC — Pick List / Shipped rework, Session 1 of 5: `ebay_order_lines` schema migration (additive; no app-code change)
+
+**Single deliverable:** added the backbone table for the Pick List / Shipped Items rework via a new migration and applied it to live prod. **No `server.js` / `public/index.html` / `/api/picklist` / `/api/pick` changes this session** — the sync that populates this table and the view/print/Shipped-page reads are later sessions (2–5).
+
+### Diagnose-first (read-only, Rule 1) — live prod before writing
+- Counts: **544 loc / 5061 items / 5061 moves / 14 seq** (matches the import baseline).
+- `items.status` in use: **`STORED` (3337) + `SHIPPED` (1724)** — no `STAGED_UNLISTED` rows (staging already empty; formal removal still backlog #4).
+- **`'SHIPPED'` location row already exists** (id 2713, type `SHIPPED`, created by the baseline import) → the migration's ensure-row is a no-op; nothing created.
+- `ebay_order_lines` did not exist → safe to create.
+
+### What was built
+- **New file `db/migrations/0001-ebay-order-lines.sql`** (first entry in `db/migrations/`, which didn't exist before). Per Rule 9 the change is a migration file; **`db/schema.sql` was NOT edited in place.**
+- Table **`ebay_order_lines`**, **PK = `order_line_item_id`** (eBay `OrderLineItemID` = `<ItemID>-<TransactionID>` — never keyed on `OrderID`). 17 columns per the brief: `store`, `ebay_item_id`, `ebay_transaction_id`, `sku_raw`/`sku_norm` (nullable), `title` (nullable), `paid`+`paid_time`, `shipped`+`ebay_shipped_time`, `matched_serial` (nullable soft pointer — **not** an FK, like `moves.serial`), `location_unknown`, `disposition` (**CHECK** ∈ NEEDS_PICK/SHIPPED/CANCELLED/DISMISSED, default NEEDS_PICK), `first_seen`, `last_synced`, `ebay_last_modified` (nullable). 5 secondary indexes (store, disposition, sku_norm, matched_serial, ebay_item_id).
+- Migration is **idempotent/additive**: `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and `INSERT … 'SHIPPED' … ON CONFLICT (name) DO NOTHING`.
+
+### Applied to live prod + verified
+Run via the public TCP proxy (`railway run --service Postgres`, same plumbing as the import). Post-apply independent read: table present with all 17 columns/types/nullability/defaults as specified; CHECK constraint present; 6 indexes (pkey + 5); `'SHIPPED'` location still 1; **row counts UNCHANGED 544/5061/5061/14**; `/api/health` **200** `db:connected`. Table is **created empty — not populated or wired to any route yet.**
+
+**Files touched:** `db/migrations/0001-ebay-order-lines.sql` (new), `SNAPSHOT_SCHEMA.md` (regenerated — added the `ebay_order_lines` section + migrations note + revised the "no eBay tables" absence), `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. DB state changed (new empty table only). No app code/frontend/route change; no `schema.sql` edit. Throwaway diagnostic/apply scripts were used and deleted (no new committed scripts — Anti-rogue C).
+
+**Production status:** `hawkerwms.up.railway.app` healthy; behavior unchanged (new table is dormant). Build baseline still 544/5061/5061/14; warehouse still on the old WMS (cutover pending).
+
+### ⏭ Next (rework sessions 2–5, NOT this session)
+Sync that reconciles eBay sold lines into `ebay_order_lines` (upsert on `order_line_item_id`, set `sku_norm`/`matched_serial`/`location_unknown`/`disposition`); rebuild `/api/picklist` to read this table; view+print Pick List; new Shipped Items page. The pick flow moving items into the real `'SHIPPED'` location (backlog #5) ties in here.
+
 ## 12:34 UTC — Research-report gap analysis folded into the Build Plan (documentation only)
 
 **Single deliverable:** appended a **"Research-Report Gap Analysis & Open Questions"** subsection to the Confirmed Workflow & Build Plan (the 01:37 entry below) and folded the enhancement candidates into its prioritized backlog as **#20–#25** (reconciled with existing items — cross-referenced, not duplicated). **No code/schema/DB/new files.**
