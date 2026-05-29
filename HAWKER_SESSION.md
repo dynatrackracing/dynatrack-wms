@@ -11,6 +11,25 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 15:39 UTC — Fix: Inventory Health blank page (mis-nested `#page-health` inside `#page-admin`)
+
+**Single deliverable:** Inventory Health rendered blank because `#page-health` was **nested inside `#page-admin`** (whose `display:none` when Admin isn't active hid Health too). Frontend only (`public/index.html`); inner content of neither section touched.
+
+### Diagnose-first (read-only)
+DOM page order is …`#page-admin` (390) → `#page-health` (431) → `</main>`. Balanced the admin section: `.ph` + a `.g2` holding two column `<div>`s; the `.g2` closes but **the outer `<div class="page" id="page-admin">` (390) had no closing `</div>`** before the Inventory Health comment/`#page-health`. So `#page-health` was swallowed as admin's child; whole-file div count was **268 open / 267 close** (off by one). Confirmed at runtime by the architect's parent-chain probe (health → admin(display:none) → main).
+
+### Fix
+Inserted the **one missing `</div>`** at the admin/health boundary (after `.g2` closes, before the `<!-- INVENTORY HEALTH -->` comment), so `#page-admin` closes after its own content and `#page-health` becomes a direct child of `<main>`. **+1 line, no content moved.**
+
+### Verified (no runtime band-aid)
+Static parent-chain probe on the **live served HTML** captured the before/after across the deploy:
+- **Before (old deploy):** div balance 268/**267**, `#page-health` at **depth 1** (inside admin) — the bug.
+- **After (new deploy):** div balance **268/268**, **all 10 `.page` divs at depth 0** (direct children of `<main>`), `#page-health` depth 0 = sibling of `#page-admin`, final depth at `</main>` = 0. `node --check` inline JS OK; `/api/health` 200. (Browser render-on-navigate is the architect's eyeball, but the structural cause is definitively gone — every page div is now an independent sibling that `navigate()` can show/hide.)
+
+**Files touched:** `public/index.html` (+1 `</div>`), `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. No server/DB change. Commit `7178b8c`. Throwaway probe script deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy; Inventory Health now shows when navigated to. (Note: prior 2026-05-28 "blank Inventory Health" work added a defensive render guard but didn't catch this DOM mis-nesting — the real root cause was structural, fixed now.)
+
 ## 14:42 UTC — Pick List / Shipped rework, Session 5 of 5 (FINAL): Shipped Items page
 
 **Single deliverable:** a new **Shipped Items** page — a searchable, read-only list of shipped items with eBay ship timestamps. Backend route + frontend page + nav entry. No mutation, no eBay call. **This completes the 5-part Pick List / Shipped Items rework.**
