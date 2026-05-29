@@ -11,6 +11,32 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 16:54 UTC — Read-only Item History overlay (serial → header + move timeline)
+
+**Single deliverable:** a read-only Item History view — given a serial, show the item header + its full chronological move timeline. **Frontend-only, on existing routes (`GET /api/items/:serial`, `GET /api/moves?serial=`). No schema change, no mutation, eBay read-only (Rule 25).**
+
+### Diagnose-first (read-only, Rule 1)
+- `GET /api/items/:serial` → full `items` row (now incl. `intake_date`), 404 if absent (`api()` throws → caught for the graceful path). `GET /api/moves?serial=` → `SELECT * … ORDER BY moved_at DESC LIMIT $n` (default 50). **Max moves/serial = 2** (avg 1.02) so 50 suffices, but pass `&limit=1000` per brief (future-proof).
+- `moves` cols: serial, from_location, to_location, moved_by, moved_at. **`moved_by` in use: `import-baseline` (5061) + `ebay-sync` (106)** — no real-user/scanner moves yet (warehouse not live).
+- House modal pattern: `<div class="modal-bg" id><div class="modal">`, `openModal/closeModal` (739/740) + a backdrop-click-close (741); modals live **after `</main>`** (not `.page` sections).
+
+### Built (frontend; `public/index.html`)
+- **`#modal-item-history`** overlay (added with the other modals, outside `<main>` — deliberately NOT a new `.page` nav section, avoiding the nesting bug just fixed).
+- **`openItemHistory(serial)`** (reusable v1 entry point): fetches the item + its moves (`&limit=1000`) and renders — **Header:** serial (Fira Code), status badge, current location, `intake_date` (or **"unknown (legacy)"** when NULL), created_at, notes. **Timeline oldest→newest** (API DESC, reversed): each event = time · `from → to` · humanized `moved_by` (**`humanizeMover`**: `import-baseline`→"Imported (baseline)", `ebay-sync`→"Shipped (eBay sync)", else raw user/scanner). First event tagged **Intake**; any `to_location='SHIPPED'` tagged **Shipped**. Unknown serial → graceful "not found".
+- **Inventory serials are now clickable links** → `openItemHistory(serial)` (canonical v1 entry; helper stays reusable so Health/Shipped/Pick List can wire later).
+
+### Verified live (Rule 17)
+- `MOD20572` (SHIPPED, 2 moves): `— → HR12S01 · Imported (baseline) [Intake]` → `HR12S01 → SHIPPED · Shipped (eBay sync) [Shipped]` — ordered timeline ending in Shipped. `000002` (STORED legacy): single `Imported (baseline) [Intake]`, intake "unknown (legacy)". `42011946` (legacy imported straight to SHIPPED): single event tagged `[Intake] [Shipped]`. Unknown serial → 404 → graceful "not found".
+- Served HTML has `openItemHistory` + the clickable serial link + `#modal-item-history`; `node --check` inline JS OK; **all 10 `.page` divs still depth-0 siblings** (whole-file divs balanced 287/287 — the modal is outside `<main>`); `/api/health` 200.
+- ⚠️ No STORED item has >1 move yet (real scan-moves haven't happened; max=2, those are SHIPPED) — the multi-event ordered timeline is demonstrated via a SHIPPED item; ordering logic is status-independent.
+
+**Files touched:** `public/index.html` (modal + `openItemHistory`/`humanizeMover` + clickable Inventory serials), `SNAPSHOT_FRONTEND.md` (modals + Inventory row + function index **re-synced to HEAD** — it had drifted ~27 lines). No server/DB change. Commit `84fa366`. Throwaway diag/verify scripts deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy. Click any Inventory serial → read-only history overlay.
+
+### ⏭ Optional follow-ups (NOT this session)
+Scan-a-serial to open history; wire the overlay to Inventory Health / Shipped / Pick List serials; eBay sale enrichment (join `ebay_order_lines.matched_serial` to cap the timeline with the actual sale — title/SKU/paid/shipped/store; needs a small backend join).
+
 ## 16:41 UTC — Migration 0002: `items.intake_date DATE` (additive; no app behaviour change)
 
 **Single deliverable:** added `items.intake_date` (DATE, nullable) — the foundation for the unlisted-aging view. **Additive schema only, mirroring the S1 `ebay_order_lines` pattern; no app/route/UI change.**
