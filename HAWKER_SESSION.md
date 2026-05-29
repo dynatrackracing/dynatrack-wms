@@ -11,6 +11,34 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 17:19 UTC — New-item intake (unknown scan → confirm + `POST /api/intake`; no silent create)
+
+**Single deliverable:** scanning an **unknown serial** now routes to a confirm step that **explicitly creates** the part (STORED, optional location, `intake_date` = the active working date) instead of the move flow silently upserting it — plus a sticky **Working-date** control to backdate a batch to its photo-folder date. Backend route + Scan & Move frontend. **No schema change** (`intake_date` exists from 0002); eBay untouched (Rule 25).
+
+### Diagnose-first (Rule 1)
+`handleScan` on a `/api/items/:serial` **404** previously just labelled the card "NEW" — then `doMove`→`POST /api/move` **silently created** the item (upsert). `/api/move` (214) = audited txn (upsert→STORED, ensure location, one moves row), `moved_by` default `'dynatrack'`. Location picker = `loc-filter`→`filterLocs`→`selectLoc`; scan field Enter-fires `handleScan`, `resetScan` refocuses. **`moved_by` in use: `import-baseline`, `ebay-sync`** — intake adds a 4th: **`intake`**.
+
+### Built — backend (`server.js`)
+- **`POST /api/intake {serial, location?, intake_date?, moved_by='intake'}`** — create-only audited txn mirroring `/api/move`: validate non-empty serial; **if the serial exists → 409 `{alreadyExists:true}`, no overwrite** (caller falls back to move); else INSERT item (`status='STORED'`, location or NULL, `intake_date`=given or `CURRENT_DATE`), ensure the location row if given, INSERT **one moves row = the intake event** (`from_location` NULL → `to_location` = shelf or the `'INTAKE'` marker, `moved_by`). Returns the created item.
+
+### Built — frontend (Scan & Move)
+- **Working-date control** (`#working-date`, JS `workingDate`): defaults to today, **sticky** until changed, **resets to today on reload** (no stale cross-session backdating). Always visible; renders in a **loud warning style whenever ≠ today** (`refreshWorkingDateStyle`).
+- **Unknown-serial branch:** `handleScan` 404 sets `scannedIsNew` + opens **`#modal-intake`** (`openIntake`) — serial, optional location (datalist of `scanLocations`), intake date **prefilled from `workingDate`, editable for this one item**. `confirmIntake` → `POST /api/intake` → success toast → `resetScan` (refocus). Cancel → discard + refocus. A 409 (race) → graceful "already in inventory — re-scan to move it". **No silent auto-create** — `doMove` on a new serial routes to `openIntake`, never `/api/move`.
+- **Existing serial:** unchanged move flow (`scannedIsNew=false`), no prompt.
+- `humanizeMover` maps `intake` → **"Added at intake"** (Item History timeline label).
+
+### Verified live (Rule 17) — deployed `POST /api/intake` exercised end-to-end
+- Empty serial → **400**. Existing `000002` → **409 `alreadyExists`** (rollback, no clobber). Create (backdated **2026-05-15**, no location) → **201**: item `STORED` / `location NULL` / `intake_date 2026-05-15` (**backdate reflected, not today**). Read-back: moves = `NULL→INTAKE by intake` (1 row, first=intake → history shows "Added at intake [Intake]"); **appears in Inventory** (STORED search). No-location item surfaces as **location-unknown, not an error**. Re-intake same serial → **409** (no duplicate). `/api/health` 200.
+- Served HTML has `confirmIntake` + `#modal-intake` + `#working-date`; `node --check` server.js OK + inline JS OK; **all 10 `.page` divs still depth-0 siblings** (modal outside `<main>`; divs balanced 295/295).
+- **Test cleanup:** the test item was deleted (items restored to **5061**); per **Rule 13** (moves append-only) the one synthetic `intake` move is retained (orphan — harmless, cleared at the cutover re-import). The frontend modal/warning visuals are the architect's browser eyeball; backend + wiring are proven.
+
+**Files touched:** `server.js` (+`POST /api/intake`), `public/index.html` (working-date control + `#modal-intake` + intake JS + scan-flow wiring + `humanizeMover`), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **No schema change.** Commit `28217a1`. Throwaway verify/clean scripts deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy. Mis-scans can no longer spawn junk inventory; batches can be backdated visibly.
+
+### ⏭ Deferred (NOT this session)
+Full Zebra/BT-HID robustness + batch-vs-single dual modes (#6); photo-at-intake (#23); condition grading (#24).
+
 ## 16:54 UTC — Read-only Item History overlay (serial → header + move timeline)
 
 **Single deliverable:** a read-only Item History view — given a serial, show the item header + its full chronological move timeline. **Frontend-only, on existing routes (`GET /api/items/:serial`, `GET /api/moves?serial=`). No schema change, no mutation, eBay read-only (Rule 25).**
