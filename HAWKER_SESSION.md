@@ -11,6 +11,31 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 14:28 UTC — Pick List / Shipped rework, Session 4 of 5: Pick List rebuilt as VIEW+PRINT (reads `ebay_order_lines`); `/api/pick` removed
+
+**Single deliverable:** the Pick List is now a clean **view+print** screen backed by `ebay_order_lines` — no item mutation from this page (the eBay sync ships items). Backend route reshape + frontend. eBay read-only (Rule 25).
+
+### Step 0 diagnosis (Rule 1)
+Read the old `GET /api/picklist` (live order↔WMS join), `#page-picklist` (`loadPickList`/`markPicked`/`printPickList` + the `@media print` block), and **grepped every caller of `POST /api/pick`** — sole caller was the frontend `markPicked`. Confirmed safe to remove.
+
+### Built
+1. **`GET /api/picklist` rewritten** → flat read of `ebay_order_lines` WHERE `disposition='NEEDS_PICK'` (LEFT JOIN items for the CURRENT shelf). Each line: `location` (matched item's current `items.location` via `matched_serial`; null when `location_unknown`), `sku` (= the matched WMS serial — what's printed on the part; falls back to `sku_raw` only for location-unknown lines), `description` (=title), `locationUnknown`. Sorted location **A–Z, location-unknown LAST**. No eBay call, no `days`, no mutation → `{lines,count,fetched}`.
+2. **Frontend `#page-picklist`** → ONE 3-column table **LOCATION · SKU · ITEM DESCRIPTION**, one row per item (new `pickRow` helper). No qty, no buttons, no scan field. location-unknown items grouped at the BOTTOM under a "Location unknown — N item(s)" heading row (never dropped). Refresh + Print buttons stay on-screen but `.no-print`.
+3. **`@media print` cleaned** → prints just the 3-column sheet (`#page-picklist` card chrome stripped, `.tw` overflow visible, table full-width with row borders; nav/aside/other pages/`.no-print` hidden as before). Removed the dead `.pick-order` rule.
+4. **Removed the dead pick action:** deleted `markPicked` + the Mark-picked button + **`POST /api/pick`** (sole caller confirmed in Step 0). Items are shipped automatically by `reconcileOrderLines` Phase 2 now.
+
+### Verified live (deployed app)
+- `/api/picklist`: **count=6 · located=5 · location_unknown=1**; line shape `{location,sku,description,locationUnknown}`. Located lines **sorted A–Z** (BR04S04, DR01S02, ESECTC, HR01S04, HR06S05; sku = bare matched serials FUS3205/ECU0165/EXT869/MOD12549/MOD18509). The 1 unknown (autolumen `MOD19995R`, raw-SKU fallback, location `—`) is **last**. Assertions: `sorted A–Z = true`, `unknown-after-located = true`.
+- **`POST /api/pick` → HTTP 404** (route gone). Served HTML has "Item Description", **no "Mark picked"**. `node --check` server.js OK, inline JS OK, `/api/health` 200.
+- ⚠️ Print *visual* is structurally correct (CSS + table verified) but the final on-paper look is an architect eyeball — I can't render a print preview headlessly.
+
+**Files touched:** `server.js` (picklist rewrite − pick route; 2 stale comments fixed), `public/index.html` (page markup, `loadPickList`/`pickRow`, removed `markPicked`, print CSS, header text), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **No DB change** (read-only route + UI). Net −66 lines of code. Commit `e9de57f`. Throwaway verify scripts deleted. Deploy was slow (~3½ min) but landed healthy.
+
+**Production status:** `hawkerwms.up.railway.app` healthy. Pick List is view+print only; the only ship path is the eBay sync. Counts unchanged (544 loc / 5061 items [3231 STORED + 1830 SHIPPED] / 5167 moves / 14 seq).
+
+### ⏭ Next (rework session 5, final)
+**S5:** Shipped Items page — reads `ebay_order_lines` WHERE `disposition='SHIPPED'` (+ `ebay_shipped_time`, store, sku/serial, title). Then the rework is complete.
+
 ## 13:53 UTC — Pick List / Shipped rework, Session 3 of 5: ship-move wired INTO the reconcile (the S2-deferred item mutation)
 
 **Single deliverable:** when the reconcile detects an order line is SHIPPED and its matched WMS item is still STORED, it now moves that item STORED→SHIPPED. **Backend only. Triggered by the reconcile, NOT `/api/pick`** (which was left completely untouched — it's slated for removal in the view+print redesign). No Pick List UI work this session. eBay read-only (Rule 25).
