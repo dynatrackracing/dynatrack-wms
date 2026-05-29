@@ -11,6 +11,30 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 18:43 UTC — Thread handoff / state snapshot (bookkeeping; no feature code)
+
+End-of-thread handoff so the next thread picks up clean. Git clean + even with `origin/main` at HEAD `6eec9bd`. No code/schema/DB changes this session — memory files only.
+
+### SHIPPED THIS THREAD (hashes = code → docs → stamp, verified against git log)
+- **a) Locations list + per-location detail.** `#page-locations` is now a **Name · Type · Items · View** table (`renderLocGrid`, name kept per Rule D); row/View → **`openLocationDetail`** → **`#modal-location-detail`** (items in that bin; serials reuse `openItemHistory`). Backend: `GET /api/items` exact **`location`** param (`WHERE location=$1`, serial-ASC, **uncapped**); `GET /api/locations` returns **`item_count`** (LEFT JOIN + GROUP BY). Commits `2944d63` → `e72e860` → `fefcf6d`.
+- **b) Scan & Move single-flow fixes.** Gap-timer item capture (`#scan-in`, `SCAN_FLUSH_MS`=80) so fast scans don't merge; scannable destination (`#loc-filter` Enter→`resolveLocInput` / gap→`commitLocScan`); `doMove` reads stable vars + guard/retention fixes. Commits `23d8ece` → `490ea89` → `02c8b7b`.
+- **c) Bulk Scan & Move — 3-step batch.** `#page-scan` rebuilt into Scan Items → Pick Location → Confirm (`#scan-step-1/2/3`, `showStep`; `addToBatch`/`renderBatch`/`removeFromBatch`/`goToConfirm`/`confirmBatch`). New transactional **`POST /api/move/batch {to_location, serials[], intake_date?}`** — atomic all-or-nothing, returns `{moved, created, location}`, exactly one `moves` row each (existing→`dynatrack`, new→`intake`). **The old single flow was REMOVED** (`handleScan`, `doMove`, `openIntake`/`confirmIntake`/`cancelIntake`, `#modal-intake`). Commits `a8096b7` → `597d699` → `6eec9bd` (HEAD).
+
+### VERIFIED headless · STILL PENDING (cutover gate)
+All three were verified headless (routes exercised on test data, served-HTML markers, node --check, `/api/health` 200, page-div siblings, div balance). **STILL PENDING — Ry's physical tablet + Zebra acceptance test of the batch flow:** scan ~30 fast (no merge), remove a mis-scan, mix new+existing → Confirm shows right counts + lists the new serials → commit moves/creates all to the shelf, a 1-item batch works, typed manual entry works, an unknown serial does NOT interrupt scanning. **This hands-on pass is the cutover gate for the daily move loop.**
+
+### OPEN NOTES
+- **(i) `POST /api/intake` is now ORPHANED** — verified this session: defined at `server.js:264`, but its only caller (the intake modal) was removed with the single flow, so **no frontend calls it**. Flagged, **not deleted** (matches how other orphaned routes are handled — `POST /api/sequences/next/:prefix`, `GET`/`POST /api/print-log`). A future cleanup can remove them together, or `/api/intake` could be re-wired if a single-add entry point is ever wanted.
+- **(ii) SHIPPED location detail renders ~1,834 rows** (`openLocationDetail('SHIPPED')`, uncapped). Loads fast / acceptable. Optional future tweak: route the SHIPPED row to the **Shipped Items page** instead of the generic bin modal.
+- **(iii) SYNC STAMP off-by-one is BY DESIGN.** The stamp block cites the **content/docs commit** while HEAD is the **trailing stamp commit** (the stamp commit can't contain its own hash). So "stamp ≠ HEAD by one commit" is normal — the next thread's staleness check should compare the stamp to the *content* commit, not flag it.
+
+### NEXT UP (architect recommendation)
+1. **Persistent session store** — *lead hardening item.* The in-memory `sessions` Map (`server.js`) drops the tablet login on **every deploy/restart**; do this BEFORE the warehouse testing pass so Ry isn't logged out mid-test.
+2. Remaining build items: **totes-vs-shelves dashboard split**, **Unlisted view** (Inventory-Health WMS-Only), **soft-archive**.
+
+### Memory files
+`CLAUDE.md` + `HAWKER_RULES.md` unchanged this thread (no rule/context change) — confirmed current; they ride along in the Rule 39 re-upload. `HAWKER_SESSION.md` + `HAWKER_CHANGELOG.md` updated (this entry).
+
 ## 18:17 UTC — Bulk Scan & Move: 3-step batch wizard (scan many → one destination, atomic commit)
 
 **Single deliverable:** replaced the two-panel single-move flow with a **3-step batch wizard** (Scan Items → Pick Location → Confirm) that moves/creates ALL scanned items to one destination in a single atomic commit. A 1-item batch = the old single move. Backend (new transactional route) + Scan & Move frontend rebuild. No new `.page`; no schema change; eBay untouched (Rule 25); exactly one `moves` row per item (Rule 13).
