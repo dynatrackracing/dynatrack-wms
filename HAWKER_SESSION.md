@@ -11,6 +11,36 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 07:39 UTC — Final import (#3) Phase 2: REAL import COMMITTED ✅ (build baseline; NOT cutover)
+
+**Single deliverable:** ran the real baseline import (`scripts/import-baseline.mjs --commit`) — clean reload of `wms-full-backup.json` into live prod. **This is the BUILD baseline so we develop against true data; it is NOT the cutover** (warehouse still on the old WMS; a final same-day extract+import is still required at go-live — re-run this same script).
+
+### Gate honored
+The approval was conditional on a Railway Postgres **snapshot**. The approval message didn't include the confirmation, so I asked and **Ry confirmed the snapshot was taken (UI)** before I ran `--commit`. (Belt-and-suspenders: the script also wrote its own commit-time pre-export rollback artifact.)
+
+### FLAG decisions applied
+- **FLAG 1:** the 59 tracking-number serials imported **as-is, flagged, excluded from the sequence calc** (not fixed — real serials unknown, all already SHIPPED). They are flagged records in the SHIPPED location.
+- **FLAG 2 (b):** added `DELETE FROM sequences` to the reload so sequences rebuild to **exactly the 14** computed prefixes (not the 17 union). The ~5 typo prefixes (M/MFD/MOMD/EOD/RYN) were NOT hand-curated — the table is vestigial, slated for removal in the dead-serial-infra cleanup.
+
+### The --commit run
+Fresh **pre-export** written (`~/hawker-preexport-2026-05-29T07-37-32-150Z.json`, gitignored — the rollback artifact). **Abort-guard re-checked and PASSED** (all 3969 prior prod moves were `moved_by='dynatrack'` test). Transactional FK-safe reload → **COMMITTED**. Deltas: −537/−3380/−3969/−12 → +544/+5061/+5061/+14.
+
+### Post-import verification (independent fresh read — Rule 27) ✅
+- **locations = 544** (522 SHELF_BIN + 21 UNLISTED_TOTE + 1 SHIPPED)
+- **items = 5061** (3337 STORED + 1724 SHIPPED)
+- **moves = 5061**, all `moved_by='import-baseline'`
+- **sequences = 14** · **FK orphan item.location = 0**
+- 59 garbage (≥20-digit tracking-number) serials present + flagged; 1724 items in the SHIPPED location · `/api/health` 200 (app healthy).
+
+**Files touched:** `scripts/import-baseline.mjs` (FLAG-2 one-line change: clear sequences before rebuild), `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **DB state changed (the import).** No app code/schema change (locations.type column already existed); no SNAPSHOT regen.
+
+### ⏭ Follow-ups (delta from the 01:37 Confirmed Workflow entry)
+- **#3 evolves:** the **build baseline is imported (2026-05-29)**; the **final cutover extract+import is still required at go-live** — take a fresh same-day extract, re-run `import-baseline.mjs --commit` (idempotent clean reload; abort-guard will protect once real non-test scans exist), then stop using the old WMS.
+- **Rollback path:** restore the confirmed Railway snapshot, or re-load `~/hawker-preexport-2026-05-29T07-37-32-150Z.json` (it's just another clean reload of the prior state). Artifact is local + gitignored.
+- All other follow-ups unchanged (Fix Locations detail [HIGH], staging removal, pick→SHIPPED-location, Scan&Move dual+Zebra, intake, unlisted, totes dashboard split, soft-archive, per-part history, persistent session store [top hardening], centralize normalizeSkuKey, dead serial-infra cleanup incl. the now-vestigial sequences/typo-prefixes, etc.).
+
+**Production status:** `hawkerwms.up.railway.app` — DB is now the **2026-05-27 extract baseline** (544 loc / 5061 items / 5061 moves / 14 seq); app healthy. Build/test data is realistic. **Not live to the warehouse yet** (cutover pending).
+
 ## 07:23 UTC — Final import (#3) Phase 1: import script + pre-export + DRY-RUN (NO commit) → awaiting approval
 
 **Single deliverable (Phase 1):** wrote the one-off `scripts/import-baseline.mjs`, ran the read-only **PRE-EXPORT**, and ran the **DRY-RUN** (`BEGIN…compute…ROLLBACK`). **No real COMMIT / no persistent DB write.** All locked decisions baked in (Option B clean reload; SHIPPED collapse; `locationType`→`type`; synthetic `import-baseline` moves; sequences recompute; flag garbage serials; skip auth/ebay/derived).

@@ -155,6 +155,7 @@ async function bulkInsert(client, table, cols, rows, conflict = '') {
     const delM = (await client.query('DELETE FROM moves')).rowCount;
     const delI = (await client.query('DELETE FROM items')).rowCount;
     const delL = (await client.query('DELETE FROM locations')).rowCount;
+    const delS = (await client.query('DELETE FROM sequences')).rowCount;   // FLAG 2 (b): clear → rebuild only the extract's computed prefixes
     const insL = await bulkInsert(client, 'locations', ['name', 'type', 'created_at'], locations, 'ON CONFLICT (name) DO NOTHING');
     const insI = await bulkInsert(client, 'items', ['serial', 'status', 'location', 'notes', 'created_at', 'updated_at'], items, 'ON CONFLICT (serial) DO NOTHING');
     const insMv = await bulkInsert(client, 'moves', ['serial', 'from_location', 'to_location', 'moved_by', 'moved_at'], moves);
@@ -170,7 +171,7 @@ async function bulkInsert(client, table, cols, rows, conflict = '') {
     const orphan = (await client.query('SELECT count(*)::int c FROM items i WHERE i.location IS NOT NULL AND NOT EXISTS (SELECT 1 FROM locations l WHERE l.name = i.location)')).rows[0].c;
 
     log('\n================ DRY-RUN DELTAS (per table) ================');
-    log('DELETE  : locations -' + delL + ' | items -' + delI + ' | moves -' + delM);
+    log('DELETE  : locations -' + delL + ' | items -' + delI + ' | moves -' + delM + ' | sequences -' + delS);
     log('INSERT  : locations +' + insL + ' | items +' + insI + ' | moves +' + insMv + ' | sequences +' + insSeq);
     log('\n================ END-STATE (in-transaction) ================');
     log('locations = ' + cLoc + '  by type: ' + JSON.stringify(cLocType));
