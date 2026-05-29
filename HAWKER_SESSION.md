@@ -11,6 +11,29 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-29
 
+## 17:43 UTC — Locations: Name·Type·Items·View list + per-location detail overlay
+
+**Single deliverable:** render locations as a **list/table** (Name · Type · Items · View, old-WMS layout) and on click open a **detail overlay** of every item in that bin. Additive, read-only; no schema change; eBay untouched (Rule 25).
+
+### Diagnose-first (Rule 1)
+`#page-locations` was a zone-tabbed **card grid** (`loadLocations`→`buildZoneTabs`/`renderLocGrid`, `setLocZone`/`filterLocGrid`). `GET /api/items` had only `status` + fuzzy `search` (ILIKE serial/location) + `limit=500` — **over-matches + caps**, unusable for an exact-bin detail. `GET /api/locations` was `SELECT * … ORDER BY name` (no count). Detail pattern = a modal after `</main>` (like `openItemHistory`), **not a new `.page`** (the missing-`</div>` nesting bug).
+
+### Built — backend (server.js, additive/read-only)
+- **`GET /api/items`** gained an **EXACT `location` param**: when present → `WHERE location=$1`, **`ORDER BY serial ASC`, UNCAPPED** (takes precedence over fuzzy `search`; SHIPPED holds ~1,834). Existing status/search/limit path unchanged.
+- **`GET /api/locations`** now returns **`item_count`** per location (`LEFT JOIN items i ON i.location=l.name … GROUP BY l.id`; 0 for empty bins). Backward-compatible (added field).
+
+### Built — frontend (public/index.html)
+- **`renderLocGrid` kept its name (Rule D)** but now renders a **Name · Type · Items · View table** (`#loc-grid` set to `display:block` to override the `.lg` grid). Zone tabs + search retained. Type badge via `locTypeBadge`/`locTypeLabel` (`SHELF_BIN`→"SHELF BIN", `*_TOTE`→"TOTE", `SHIPPED`). Row **and** the View link → `openLocationDetail(name)`.
+- **`openLocationDetail(name)`** fetches `GET /api/items?location=<name>` and renders `#modal-location-detail` — header (name · type · count) + a Serial · Status · Notes table; **serials reuse `openItemHistory`**; empty bin → "No items in this location." Modal placed **before `#modal-item-history`** in DOM so history stacks on top when a serial is clicked from within it.
+
+### Verified live (Rule 17)
+- `/api/locations` → 544 rows with `item_count`. `HR01S01` (SHELF_BIN): **count 40 = /items?location returned 40**, all exact-location, serial-ASC. `SHIPPED`: **count 1834 = returned 1834** (uncapped, exact). Served HTML has `openLocationDetail` + `#modal-location-detail`; `node --check` + inline JS OK; **all 10 `.page` divs depth-0 siblings** (divs 304/304); `/api/health` 200.
+- ⚠️ The client check flagged `serial-ASC=false` for SHIPPED — a **harness artifact** (JS `localeCompare` ICU collation ≠ Postgres text collation on mixed alphanumerics); the route DOES apply `ORDER BY serial ASC` (first serials `000001<000012<000039<000081`; HR01S01's homogeneous serials passed). Modal/visuals are the architect's browser eyeball.
+
+**Files touched:** `server.js` (items `location` param + locations `item_count`), `public/index.html` (`renderLocGrid` table + `locTypeLabel`/`locTypeBadge`/`openLocationDetail` + `#modal-location-detail`), `SNAPSHOT_ROUTES.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. **No schema change.** Commit `2944d63`. Throwaway verify script deleted.
+
+**Production status:** `hawkerwms.up.railway.app` healthy. Locations page is a clickable Name/Type/Items/View list; each bin opens its contents. (Note: SHIPPED bin now 1,834 — 1,724 baseline + 110 ship-moved; the +4 over the prior 1,830 reflects `ebay-sync` ship-moves from a between-sessions orders sync, the S3 self-healing.)
+
 ## 17:19 UTC — New-item intake (unknown scan → confirm + `POST /api/intake`; no silent create)
 
 **Single deliverable:** scanning an **unknown serial** now routes to a confirm step that **explicitly creates** the part (STORED, optional location, `intake_date` = the active working date) instead of the move flow silently upserting it — plus a sticky **Working-date** control to backdate a batch to its photo-folder date. Backend route + Scan & Move frontend. **No schema change** (`intake_date` exists from 0002); eBay untouched (Rule 25).
