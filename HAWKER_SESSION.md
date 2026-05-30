@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 75e30a9 @ 2026-05-30 05:22 UTC (⚠️ LOCAL ONLY — origin/main is still at c97bd88; soft-archive + this fix await an authorized push)
-STAMP UPDATED BY: Claude Code, session 05:20 UTC
+LAST PUSHED COMMIT: 4be8c9d @ 2026-05-30 05:43 UTC (⚠️ LOCAL ONLY — origin/main is still at c97bd88; soft-archive + reconcile-fix + StartTime all await an authorized push)
+STAMP UPDATED BY: Claude Code, session 05:42 UTC
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -33,7 +33,7 @@ Replicated the new parse against live eBay (dynatrack page 1, 200 listings): **`
 Per-variation SKU emission + the cross-listed/oversell tightening it enables. When a variation listing exists: source listings from **`GetSellerList`** (`IncludeVariations=true`, `GranularityLevel=Fine`), emit one `(sku, available=Variation.Quantity−Variation.SellingStatus.QuantitySold, startTime)` row per `Variation`; flat listings keep `Item.SKU`. The matcher (union of flat+variation SKUs) then needs no further change — each variation is already a separate `ALL_LISTINGS` entry.
 
 ### Files
-server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `<pending>`. (origin/main still at `c97bd88`; soft-archive + reconcile-fix + this all await one authorized push.)
+server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `4be8c9d`. (origin/main still at `c97bd88`; soft-archive + reconcile-fix + this all await one authorized push.)
 
 ### Memory files
 HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
