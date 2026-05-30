@@ -669,8 +669,14 @@ async function fetchStoreListings(key) {
         price:     parseFloat(parseXmlValue(block, 'CurrentPrice') || parseXmlValue(block, 'StartPrice') || '0'),
         qty:       available,   // displayed quantity (= available-to-sell)
         available,              // explicit available-to-sell — Inventory Health excludes sold-out (<=0)
+        startTime: parseXmlValue(block, 'StartTime') || null,  // ListingDetails.StartTime (when the listing went live)
         url:       parseXmlValue(block, 'ViewItemURL'),
       });
+      // NOTE (2026-05-30): per-variation SKUs are NOT emitted here. GetMyeBaySelling ActiveList does
+      // not return the <Variations> node (verified across all live listings, incl. DetailLevel=ReturnAll),
+      // and there are currently zero variation listings in either store. When variation listings exist,
+      // the matcher fix is to source listings from GetSellerList (IncludeVariations=true) and emit one
+      // (sku, available, startTime) row per Variation. Deferred until there's real data to verify against.
     }
     const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
     if (page >= totalPages || itemBlocks.length === 0) break;

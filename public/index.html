@@ -1358,7 +1358,7 @@ function mapOrder(o) {
   };
 }
 function mapListing(l) {
-  return { store: l.store || '', sku: l.sku, title: l.title, price: l.price, qty: l.qty, available: (l.available != null ? l.available : l.qty), url: l.url || '#' };
+  return { store: l.store || '', sku: l.sku, title: l.title, price: l.price, qty: l.qty, available: (l.available != null ? l.available : l.qty), startTime: l.startTime || null, url: l.url || '#' };
 }
 
 async function syncEbayNow() {

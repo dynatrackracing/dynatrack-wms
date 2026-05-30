@@ -11,6 +11,33 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-30
 
+## 05:42 UTC — Capture listing StartTime in ingestion (variation-SKU handling deferred — no data)
+
+**Single deliverable (scoped down after diagnosis):** capture each eBay listing's `StartTime` in the listings ingestion. eBay READ-ONLY (Rule 25); additive; no schema change. **Architect chose "StartTime now, variations when real"** after the probe below.
+
+### Diagnose (Step 0) + read-only probe — the build premise didn't hold
+`fetchStoreListings` calls `GetMyeBaySelling` ActiveList (200/page, `HideVariations=false`) and reads only **Item-level** `SKU`/`Quantity`/`QuantitySold`/`QuantityAvailable` → one row per listing; never parses `<Variations>`, never captures `StartTime`.
+- **ActiveList does NOT return `<Variations>` — even with `DetailLevel=ReturnAll`.** Probed ALL live listings (dynatrack 3,280 across 17 pages + autolumen 532): **0** carried a `<Variations>` node.
+- **There are ZERO variation listings in either store.** The only empty-Item-SKU listings (dynatrack `287192249616`,`287356892876`; autolumen `397904410163`) — confirmed via one-off `GetItem` (`DetailLevel=ReturnAll, IncludeVariations=true`): **`hasVariations=false, varCount=0`** — they're genuinely SKU-less flat listings (correctly unmatched). `GetSellerList` page 1 also showed 0 variations.
+- **`StartTime` IS returned by ActiveList on 100% of listings** (e.g. `2026-03-30T11:15:33Z`) and was simply being dropped.
+→ So the "false unlisted on variation parts" problem **isn't occurring now** (nothing to reproduce/verify), and the task's own decision tree (if ActiveList won't expand variations → switch to `GetSellerList`) would be a forward-looking ingestion swap with no real data to verify. Reported to the architect; chose to **add StartTime now, defer the variation/GetSellerList swap until a variation listing exists.**
+
+### Built (additive)
+- **server.js `fetchStoreListings`:** each listing now emits `startTime: parseXmlValue(block,'StartTime') || null`. Added a code NOTE that per-variation SKUs require `GetSellerList` (ActiveList won't expand them) and are deferred (0 variation listings).
+- **public/index.html `mapListing`:** carries `startTime` through onto `ALL_LISTINGS` (downstream Inventory Health / cross-listed read the enriched set). No behavioural change to matching (no new SKUs, since no variations).
+
+### Verified live (read-only)
+Replicated the new parse against live eBay (dynatrack page 1, 200 listings): **`startTime` present on 200/200 (100%)**, all values pass `Date.parse` (0 failures); `sku`/`available` unchanged (e.g. `INT4698R` avail 0 start 2026-03-30, `MOD20383` avail 1). `node --check` server.js + inline JS OK; div balance 330/330. (`/api/health` + the live `/api/ebay/listings` payload carrying `startTime` — post-deploy.)
+
+### Deferred (NOT built — needs real data)
+Per-variation SKU emission + the cross-listed/oversell tightening it enables. When a variation listing exists: source listings from **`GetSellerList`** (`IncludeVariations=true`, `GranularityLevel=Fine`), emit one `(sku, available=Variation.Quantity−Variation.SellingStatus.QuantitySold, startTime)` row per `Variation`; flat listings keep `Item.SKU`. The matcher (union of flat+variation SKUs) then needs no further change — each variation is already a separate `ALL_LISTINGS` entry.
+
+### Files
+server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `<pending>`. (origin/main still at `c97bd88`; soft-archive + reconcile-fix + this all await one authorized push.)
+
+### Memory files
+HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
+
 ## 05:20 UTC — Reconcile refund/cancel detection fix (refunded lines now leave NEEDS_PICK)
 
 **Single deliverable:** fix the reconcile so refunded/cancelled sold lines reliably leave NEEDS_PICK (root cause of stale pick-list strays). eBay READ-ONLY (Rule 25 — probe + sync are reads). No schema migration.
