@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 87ac774 @ 2026-05-30 01:12 UTC
-STAMP UPDATED BY: Claude Code, session 01:09 UTC
+LAST PUSHED COMMIT: bf52e2e @ 2026-05-30 04:56 UTC
+STAMP UPDATED BY: Claude Code, session 04:54 UTC
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -38,7 +38,7 @@ On real STORED item `000002` @ `HR01S01` (exact route SQL): archive → **stored
 Authenticated browser pass: open an item's history → **Decommission / Scrap** (with a reason) → it disappears from Inventory + Dashboard STORED count + Inventory Health; **Admin → Archived list** shows it; **Restore** → it returns to its shelf + counts. Post-deploy `/api/health` + new routes return 401 (registered) — checked after push (below).
 
 ### Files
-db/migrations/0003-items-archived.sql, server.js, public/index.html, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. Commit `<pending>`.
+db/migrations/0003-items-archived.sql, server.js, public/index.html, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. Commit `bf52e2e`.
 
 ### Memory files
 HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).** CLAUDE.md + HAWKER_RULES.md unchanged.
