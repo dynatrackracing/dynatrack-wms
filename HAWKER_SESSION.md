@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: bf52e2e @ 2026-05-30 04:56 UTC
-STAMP UPDATED BY: Claude Code, session 04:54 UTC
+LAST PUSHED COMMIT: 75e30a9 @ 2026-05-30 05:22 UTC (⚠️ LOCAL ONLY — origin/main is still at c97bd88; soft-archive + this fix await an authorized push)
+STAMP UPDATED BY: Claude Code, session 05:20 UTC
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -39,7 +39,7 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 2. **Anything paid >90 days ago is outside the GetOrders window** and is never re-fetched, so its line won't be re-derived at all (won't auto-flip regardless of this fix).
 
 ### Files
-server.js, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `<pending>`. **(Note: origin/main is still at `c97bd88`; the soft-archive commits `bf52e2e`+`9a54e86` AND this fix are LOCAL — all deploy together on the next authorized push.)**
+server.js, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `75e30a9`. **(Note: origin/main is still at `c97bd88`; the soft-archive commits `bf52e2e`+`9a54e86` AND this fix are LOCAL — all deploy together on the next authorized push.)**
 
 ### Memory files
 HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
