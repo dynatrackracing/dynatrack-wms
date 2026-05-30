@@ -460,6 +460,11 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
       </div>
     </div>
   </div>
+  <div style="max-width:900px;margin-top:24px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:6px">Archived / Decommissioned Items <span id="archived-count" style="color:var(--muted);font-weight:400;font-size:12px"></span></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Items removed from active inventory (damaged / lost / scrapped). Excluded from all counts &amp; Inventory Health; movement history is retained. Restore puts an item back on its shelf.</div>
+    <div id="archived-list"><div class="loading">Loading…</div></div>
+  </div>
 </div>
 <!-- ═══════ INVENTORY HEALTH ═══════ -->
 <div class="page" id="page-health">
@@ -809,6 +814,8 @@ function humanizeMover(m) {
   if (m === 'import-baseline') return 'Imported (baseline)';
   if (m === 'ebay-sync')       return 'Shipped (eBay sync)';
   if (m === 'intake')          return 'Added at intake';
+  if (m === 'archive')         return 'Decommissioned / scrapped';
+  if (m === 'unarchive')       return 'Restored from archive';
   return m || 'unknown';
 }
 async function openItemHistory(serial) {
@@ -827,14 +834,17 @@ async function openItemHistory(serial) {
     var sc = item.status === 'STORED' ? 'bg-s' : item.status === 'STAGED_UNLISTED' ? 'bg-p' : item.status === 'SHIPPED' ? 'bg-m' : 'bg-w';
     var intake  = item.intake_date ? new Date(item.intake_date).toLocaleDateString('en-AU') : 'unknown (legacy)';
     var created = item.created_at  ? new Date(item.created_at).toLocaleString('en-AU') : '—';
+    var isArchived = !!item.archived_at;
+    var archBadge  = isArchived ? ' <span class="badge" style="background:var(--err-d);color:var(--err);font-family:Plus Jakarta Sans,sans-serif">ARCHIVED</span>' : '';
     var header = '<div style="margin-bottom:16px">'
       + '<div class="mono" style="font-size:16px;color:var(--text);font-weight:600;margin-bottom:10px">' + item.serial
-      + ' <span class="badge ' + sc + '" style="font-family:Plus Jakarta Sans,sans-serif">' + item.status + '</span></div>'
+      + ' <span class="badge ' + sc + '" style="font-family:Plus Jakarta Sans,sans-serif">' + item.status + '</span>' + archBadge + '</div>'
       + '<div style="display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:12px">'
       + '<span style="color:var(--muted)">Location</span><span class="mono" style="color:var(--text)">' + (item.location || '—') + '</span>'
       + '<span style="color:var(--muted)">Intake date</span><span style="color:var(--text)">' + intake + '</span>'
       + '<span style="color:var(--muted)">Created</span><span style="color:var(--text)">' + created + '</span>'
       + '<span style="color:var(--muted)">Notes</span><span style="color:var(--text)">' + (item.notes || '—') + '</span>'
+      + (isArchived ? '<span style="color:var(--muted)">Archived</span><span style="color:var(--err)">' + new Date(item.archived_at).toLocaleString('en-AU') + (item.archive_reason ? ' · ' + item.archive_reason : '') + '</span>' : '')
       + '</div></div>';
     var evs = (moves || []).slice().reverse();  // API returns newest-first; show oldest → newest
     var timeline;
@@ -856,10 +866,38 @@ async function openItemHistory(serial) {
           }).join('')
         + '</div>';
     }
-    body.innerHTML = header + timeline;
+    var action = isArchived
+      ? '<div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">'
+          + '<button class="btn btn-p" onclick="unarchiveItem(\'' + item.serial + '\')">Restore to inventory</button>'
+          + '<span style="font-size:11px;color:var(--muted);margin-left:10px">Returns it to active inventory + its shelf.</span></div>'
+      : '<div style="border-top:1px solid var(--border);margin-top:14px;padding-top:14px">'
+          + '<button class="btn btn-s" style="color:var(--err);border-color:var(--err)" onclick="archiveItem(\'' + item.serial + '\')">Decommission / Scrap</button>'
+          + '<span style="font-size:11px;color:var(--muted);margin-left:10px">Removes it from active inventory + reports; history kept; reversible.</span></div>';
+    body.innerHTML = header + timeline + action;
   } catch(e) {
     body.innerHTML = '<div style="color:var(--err);padding:14px">Could not load history: ' + e.message + '</div>';
   }
+}
+// ── Decommission / scrap (soft-archive) + restore — reversible, history retained ──
+async function archiveItem(serial) {
+  var reason = prompt('Decommission / scrap "' + serial + '"?\nOptional reason (damaged, lost, scrapped…):', '');
+  if (reason === null) return;  // cancelled
+  try {
+    var r = await api('/items/' + encodeURIComponent(serial) + '/archive', { method: 'POST', body: { reason: reason || null, moved_by: 'archive' } });
+    showToast(r.archived ? serial + ' decommissioned — removed from active inventory.' : serial + ' is already archived.', !r.archived);
+    openItemHistory(serial);                              // refresh the overlay to its archived state
+    if (document.getElementById('page-admin').classList.contains('active')) loadArchived();
+    if (document.getElementById('page-inventory').classList.contains('active')) loadInventory(invStatus);
+  } catch(e) { showToast('Decommission failed: ' + e.message, true); }
+}
+async function unarchiveItem(serial) {
+  try {
+    var r = await api('/items/' + encodeURIComponent(serial) + '/unarchive', { method: 'POST', body: { moved_by: 'unarchive' } });
+    showToast(r.restored ? serial + ' restored to active inventory.' : serial + ' is not archived.', !r.restored);
+    openItemHistory(serial);
+    if (document.getElementById('page-admin').classList.contains('active')) loadArchived();
+    if (document.getElementById('page-inventory').classList.contains('active')) loadInventory(invStatus);
+  } catch(e) { showToast('Restore failed: ' + e.message, true); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1644,6 +1682,35 @@ async function loadAdmin() {
         + '</div>';
     }).join('');
   } catch(e) {}
+  loadArchived();
+}
+
+// ── Archived / Decommissioned list (Admin) — view + restore ──────────────────
+async function loadArchived() {
+  var host = document.getElementById('archived-list');
+  try {
+    var items = await api('/items?archived=1&limit=10000');
+    document.getElementById('archived-count').textContent = items.length ? '(' + items.length + ')' : '';
+    if (!items.length) {
+      host.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:16px">No archived items — active inventory is clean.</div>';
+      return;
+    }
+    items.sort(function(a, b){ return new Date(b.archived_at || 0) - new Date(a.archived_at || 0); });  // newest archived first
+    host.innerHTML = '<div class="card"><div class="tw"><table>'
+      + '<thead><tr><th>Serial</th><th>Reason</th><th>Last location</th><th>Archived</th><th></th></tr></thead><tbody>'
+      + items.map(function(it){
+          return '<tr>'
+            + '<td><span class="mono" style="color:var(--brand);cursor:pointer" onclick="openItemHistory(\'' + it.serial + '\')" title="View item history">' + it.serial + '</span></td>'
+            + '<td>' + (it.archive_reason || '—') + '</td>'
+            + '<td class="mono">' + (it.location || '—') + '</td>'
+            + '<td style="white-space:nowrap;color:var(--muted)">' + (it.archived_at ? new Date(it.archived_at).toLocaleString('en-AU') : '—') + '</td>'
+            + '<td style="text-align:right"><button class="btn btn-s" style="padding:4px 10px;font-size:12px" onclick="unarchiveItem(\'' + it.serial + '\')">Restore</button></td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div></div>';
+  } catch(e) {
+    host.innerHTML = '<div class="card" style="text-align:center;color:var(--err);padding:16px">Could not load archived items: ' + e.message + '</div>';
+  }
 }
 
 async function editSeq(prefix, current) {

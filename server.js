@@ -111,10 +111,11 @@ app.get('/api/health', async (req, res) => {
 app.get('/api/locations', requireAuth, async (req, res) => {
   try {
     // All location columns + a per-location item count (LEFT JOIN so empty bins show 0).
+    // Archived/scrapped items don't occupy a bin → excluded from the count (active inventory).
     const { rows } = await pool.query(`
       SELECT l.*, COUNT(i.serial)::int AS item_count
         FROM locations l
-        LEFT JOIN items i ON i.location = l.name
+        LEFT JOIN items i ON i.location = l.name AND i.archived_at IS NULL
        GROUP BY l.id
        ORDER BY l.name
     `);
@@ -143,10 +144,15 @@ app.delete('/api/locations/:name', requireAuth, async (req, res) => {
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 app.get('/api/items', requireAuth, async (req, res) => {
-  const { status, search, location, limit = 500 } = req.query;
+  const { status, search, location, limit = 500, archived } = req.query;
   let q   = 'SELECT * FROM items';
   const p = [];
   const w = [];
+
+  // Soft-archive gate: default returns ACTIVE inventory only (archived_at IS NULL). Pass
+  // ?archived=1 for the Archived/Decommissioned list (archived_at IS NOT NULL). Every active
+  // caller (Inventory, Inventory Health's /items?status=STORED, location detail) gets the gate.
+  w.push(archived === '1' || archived === 'true' ? 'archived_at IS NOT NULL' : 'archived_at IS NULL');
 
   if (status) { p.push(status); w.push(`status = $${p.length}`); }
   if (location) {
@@ -182,6 +188,7 @@ app.get('/api/items/count', requireAuth, async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'STAGED_UNLISTED')  AS staged,
         COUNT(*) FILTER (WHERE status = 'SHIPPED')          AS shipped
       FROM items
+      WHERE archived_at IS NULL
     `);
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -223,6 +230,64 @@ app.patch('/api/items/:serial', requireAuth, async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Soft-archive: decommission / scrap (reversible) ──────────────────────────
+// Sets archived_at (+ reason) so the item leaves active inventory and every active count
+// (archived_at IS NULL gate), and writes ONE moves row to 'ARCHIVED'. status is LEFT AS-IS
+// (Rule 11 — no new status value); the item's location is retained so a restore returns it
+// to the same shelf. Guarded to a LIVE (non-archived) item. No eBay (Rule 25); moves stays
+// append-only (Rule 13). 200 with archived:0 on no-op (matches the dismiss/restore pattern).
+app.post('/api/items/:serial/archive', requireAuth, async (req, res) => {
+  const { reason, moved_by = 'archive' } = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE items SET archived_at = NOW(), archive_reason = $2
+         WHERE serial = $1 AND archived_at IS NULL
+         RETURNING location`,
+      [req.params.serial, reason || null]
+    );
+    if (!rows.length) { await client.query('ROLLBACK'); return res.json({ ok: true, archived: 0 }); }
+    await client.query(
+      `INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, 'ARCHIVED', $3)`,
+      [req.params.serial, rows[0].location || null, moved_by]
+    );
+    await client.query('COMMIT');
+    res.json({ ok: true, archived: 1, reason: reason || null });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
+// ── Un-archive: restore a decommissioned item (reverse of archive) ───────────
+// Clears archived_at + reason and writes one moves row back FROM 'ARCHIVED' to the item's
+// retained location (it never physically left, so it returns to its shelf). Guarded to an
+// archived item. status untouched, no eBay. 200 with restored:0 on no-op.
+app.post('/api/items/:serial/unarchive', requireAuth, async (req, res) => {
+  const { moved_by = 'unarchive' } = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE items SET archived_at = NULL, archive_reason = NULL
+         WHERE serial = $1 AND archived_at IS NOT NULL
+         RETURNING location`,
+      [req.params.serial]
+    );
+    if (!rows.length) { await client.query('ROLLBACK'); return res.json({ ok: true, restored: 0 }); }
+    await client.query(
+      `INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, 'ARCHIVED', $2, $3)`,
+      [req.params.serial, rows[0].location || 'RESTORED', moved_by]
+    );
+    await client.query('COMMIT');
+    res.json({ ok: true, restored: 1 });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
 });
 
 // ── Move (scan-and-move core action) ─────────────────────────────────────────
@@ -783,9 +848,10 @@ function normalizeSkuKey(s) {
 async function reconcileOrderLines(orderList) {
   if (!Array.isArray(orderList) || orderList.length === 0) return { upserts: 0, skipped: 0, moved: 0 };
 
-  // Match candidates: STORED items only, keyed by normalized serial (Rule 8).
+  // Match candidates: active STORED items only, keyed by normalized serial (Rule 8).
+  // Archived/scrapped items are NOT pick candidates — they must not match an eBay sale.
   const storedByKey = {};
-  const { rows: storedRows } = await pool.query("SELECT serial FROM items WHERE status = 'STORED'");
+  const { rows: storedRows } = await pool.query("SELECT serial FROM items WHERE status = 'STORED' AND archived_at IS NULL");
   for (const r of storedRows) {
     const k = normalizeSkuKey(r.serial);
     (storedByKey[k] = storedByKey[k] || []).push(r.serial);
@@ -888,6 +954,7 @@ async function reconcileOrderLines(orderList) {
   const { rows: toMove } = await pool.query(
     `SELECT i.serial FROM items i
       WHERE i.status = 'STORED'
+        AND i.archived_at IS NULL
         AND EXISTS (SELECT 1 FROM ebay_order_lines e
                      WHERE e.matched_serial = i.serial AND e.disposition = 'SHIPPED')`
   );
@@ -1117,6 +1184,7 @@ app.get('/api/stats', requireAuth, async (req, res) => {
           COUNT(*) FILTER (WHERE status = 'STAGED_UNLISTED')  AS staged,
           COUNT(*) FILTER (WHERE status = 'SHIPPED')          AS shipped
         FROM items
+        WHERE archived_at IS NULL
       `),
       pool.query('SELECT COUNT(*) AS total FROM locations'),
       pool.query('SELECT * FROM moves ORDER BY moved_at DESC LIMIT 10'),

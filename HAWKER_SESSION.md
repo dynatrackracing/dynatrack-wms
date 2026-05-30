@@ -11,6 +11,38 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-30
 
+## 04:54 UTC — Soft-archive: decommission/scrap items (closes the SCRAP leak in Inventory Health)
+
+**Single deliverable:** a reversible way to mark a live item as **decommissioned/scrapped** so it leaves active inventory + every report while its `moves` history is retained. This is the long-pending **soft-archive (Briefs 3a/3b)** and it closes the SCRAP leak that polluted Inventory Health (a scrapped part still matched eBay / counted as on-shelf). Schema change = migration (Rule 9), `moves` append-only (Rule 13), eBay untouched (Rule 25).
+
+### Diagnose-first (Rules 1, E) — Step 0
+- `items` schema: `serial/status/location/notes/created_at/updated_at` (+`intake_date` from 0002). **STORED is counted STATUS-based everywhere** — `/api/items/count` (182), `/api/stats` (Dashboard), `/api/items` (which also feeds Inventory Health via `?status=STORED&limit=10000`), `reconcileOrderLines` match `SELECT serial … WHERE status='STORED'` (pick matching) + Phase-2 ship, and `/api/locations` `item_count`. **No location-based counting anywhere.**
+- **Mechanism decision → the FLAG, not a `SCRAPPED` location.** Because counts are status-based, a SCRAPPED location wouldn't drop items from `status='STORED'` counts without either changing status (forbidden — Rule 11) or smearing `location != 'SCRAPPED'` across every query. A single `archived_at IS NULL` predicate is clean. Honors the **Briefs 3a/3b** intent recorded in this file (soft-archive non-shipped removals, history retained, *complements the SHIPPED location* — i.e. orthogonal to status); no detailed 3a/3b mechanism was locked in, so nothing conflicted.
+
+### Built — migration 0003 (`db/migrations/0003-items-archived.sql`)
+`ALTER TABLE items ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ` + `archive_reason TEXT` (both nullable, no default → existing rows stay active/NULL, NOT backfilled) + partial index `items(archived_at) WHERE archived_at IS NOT NULL`. Additive/idempotent. **ACTIVE INVENTORY := `archived_at IS NULL`.** No new status value (Rule 11 unchanged). `schema.sql` NOT edited in place (Rule 9). **Applied to live prod** via node+pg through `railway run --service Postgres` (psql still not installed on this laptop): columns + index present, 0 archived rows, counts unchanged (items 5062 / stored 3227 / locations 544 / moves 5188).
+
+### Built — backend (server.js)
+- **Gated `archived_at IS NULL` on every active-inventory read:** `/api/items` default (+ `?archived=1` for the archived list), `/api/items/count`, `/api/stats` counts, `/api/locations` `item_count` (JOIN cond), reconcile match candidates + Phase-2 ship-move. So Dashboard, Inventory, Inventory Health, unlisted/cross-listed, and pick matching all auto-exclude archived.
+- **`POST /api/items/:serial/archive`** `{reason?, moved_by='archive'}` — ONE txn: guarded `UPDATE … SET archived_at=NOW(), archive_reason=$ WHERE serial=$ AND archived_at IS NULL` (live items only) + ONE `moves` row → `'ARCHIVED'`. **status left as-is**, location retained. `200 {archived:0}` no-op if not found/already archived.
+- **`POST /api/items/:serial/unarchive`** — reverse: clears `archived_at`/`archive_reason` (guard `IS NOT NULL`) + ONE `moves` row FROM `'ARCHIVED'` back to the retained `location` (→`'RESTORED'` if null). `200 {restored:0}` no-op.
+
+### Built — frontend (public/index.html)
+- **Item History overlay** (`openItemHistory`): archived item shows an **ARCHIVED** badge + Archived row (timestamp · reason); footer action = **"Decommission / Scrap"** (`archiveItem` → `prompt` reason → POST) on a live item, **"Restore to inventory"** (`unarchiveItem`) on an archived one. Both re-open the overlay + refresh Inventory/Admin if active. `humanizeMover` gained `archive`→"Decommissioned / scrapped", `unarchive`→"Restored from archive".
+- **Admin** → new **"Archived / Decommissioned"** list (`loadArchived`, called from `loadAdmin`): `GET /api/items?archived=1` → table Serial(→history) · Reason · Last location · Archived-at · **[Restore]**, newest first, with a count badge.
+
+### Verified (Rules 1, 17) — live prod DB, single-txn round-trip then ROLLBACK (zero prod impact)
+On real STORED item `000002` @ `HR01S01` (exact route SQL): archive → **storedActive 3227→3226 (−1)**, **dropped from active items list**, **in archived list**, **NOT a pick candidate**, **bin count 40→39 (−1)**, **history row retained**, **+1 `ARCHIVED` moves row**; unarchive → restored to 3227 + back in active list; **ROLLBACK → prod 100% unchanged** (storedActive 3227, 0 archived rows, moves for the item unchanged — no stray `moves` rows left). `node --check` server.js + inline JS OK; **11 `.page` divs depth-0 siblings, div balance 330/330** (Archived list lives inside Admin, not a new page).
+
+### STILL PENDING (Ry hands-on — no WMS creds on this laptop)
+Authenticated browser pass: open an item's history → **Decommission / Scrap** (with a reason) → it disappears from Inventory + Dashboard STORED count + Inventory Health; **Admin → Archived list** shows it; **Restore** → it returns to its shelf + counts. Post-deploy `/api/health` + new routes return 401 (registered) — checked after push (below).
+
+### Files
+db/migrations/0003-items-archived.sql, server.js, public/index.html, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).** CLAUDE.md + HAWKER_RULES.md unchanged.
+
 ## 01:09 UTC — Pick List age-aware split + retained Errors tab (stale auto-route, dismiss/restore)
 
 **Single deliverable:** an age-aware Pick List that auto-routes stale lines (paid > 3 US business days) off the daily pick sheet into a retained, low-prominence **Errors** tab, with manual **Dismiss** (→ retained archive) and **Restore**. WMS-side writes only, no eBay calls/pushes (Rule 25). **No schema migration** — staleness is a read-time filter; `DISMISSED` already exists in the `ebay_order_lines.disposition` CHECK and is already protected by the reconcile's ON CONFLICT.

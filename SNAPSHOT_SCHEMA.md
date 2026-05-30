@@ -2,7 +2,7 @@
 
 > Orientation map of the database. Regenerate at session end if `db/schema.sql` or a `db/migrations/` file changed (HAWKER_RULES rule 38).
 > Generated 2026-05-29 from `db/schema.sql` **+ applied migrations in `db/migrations/`**. PostgreSQL (Railway).
-> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29).
+> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30).
 
 ## Tables
 
@@ -23,7 +23,9 @@
 | `location` | TEXT → **`locations(name)`** | FK `ON UPDATE CASCADE ON DELETE SET NULL` (rule 12) — renaming a location updates items; deleting nulls them |
 | `notes` | TEXT | |
 | `created_at` / `updated_at` | TIMESTAMPTZ DEFAULT NOW() | `updated_at` auto-maintained by trigger |
-| `intake_date` | DATE (nullable) | *migration 0002 (2026-05-29)* — when the item was taken into the warehouse; foundation for the unlisted-aging view. NULL on baseline-imported rows (unknown/legacy age, **not** backfilled); set explicitly by future intake. Not yet written/read by any route. |
+| `intake_date` | DATE (nullable) | *migration 0002 (2026-05-29)* — when the item was taken into the warehouse; foundation for the unlisted-aging view. NULL on baseline-imported rows (unknown/legacy age, **not** backfilled); set explicitly by future intake. |
+| `archived_at` | TIMESTAMPTZ (nullable) | *migration 0003 (2026-05-30)* — **soft-archive / decommission-scrap flag. `archived_at IS NULL` = ACTIVE inventory.** Set = the item left active inventory + **every active count** (Dashboard, Inventory Health, pick matching, bin `item_count`) but its `moves` history is retained. **Orthogonal to `status`** (status untouched — Rule 11 unchanged). Reversible via un-archive. Set/cleared by `POST /api/items/:serial/archive` `/unarchive`. |
+| `archive_reason` | TEXT (nullable) | *migration 0003* — free-text why (damaged / lost / scrapped…); cleared on un-archive. |
 
 ### `moves` — append-only audit log (rule 13)
 | Column | Type | Notes |
@@ -78,7 +80,7 @@ Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment
 - No trigger on `ebay_order_lines` — `last_synced` is set explicitly by the sync.
 
 ## Indexes
-`items(serial)`, `items(status)`, `items(location)`, `items(intake_date)` *(migration 0002)*, `moves(serial)`, `moves(moved_at DESC)`.
+`items(serial)`, `items(status)`, `items(location)`, `items(intake_date)` *(migration 0002)*, **`items(archived_at) WHERE archived_at IS NOT NULL`** *(migration 0003 — partial; indexes only archived rows for the small Archived list)*, `moves(serial)`, `moves(moved_at DESC)`.
 `ebay_order_lines`: PK on `order_line_item_id` + `(store)`, `(disposition)`, `(sku_norm)`, `(matched_serial)`, `(ebay_item_id)`.
 
 ## Seed sequences (⚠️ template only — NOT production)
