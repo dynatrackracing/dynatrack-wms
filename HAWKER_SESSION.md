@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 0080dc2 @ 2026-05-29 18:44 UTC
-STAMP UPDATED BY: Claude Code, session 18:43 UTC
+LAST PUSHED COMMIT: 87ac774 @ 2026-05-30 01:12 UTC
+STAMP UPDATED BY: Claude Code, session 01:09 UTC
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -41,7 +41,7 @@ The authenticated HTTP + browser-UI pass is Ry's: open **Pick List** (only ≤3-
 A **DISMISSED line is never auto-ship-moved** even if eBay later ships it (reconcile keeps DISMISSED; Phase-2 ship-move only acts on matched SHIPPED rows). That's intended — dismiss = "handle outside the normal flow." Restore it first if it should ship normally.
 
 ### Files
-server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. **No schema change** (SNAPSHOT_SCHEMA untouched). Commit `<pending>`.
+server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. **No schema change** (SNAPSHOT_SCHEMA untouched). Commit `87ac774`.
 
 ### Memory files
 HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated this session → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).** CLAUDE.md + HAWKER_RULES.md unchanged in content (the EOF-newline touch you made on RULES/SESSION mid-session carries no content change).
