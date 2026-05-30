@@ -922,31 +922,156 @@ async function reconcileOrderLines(orderList) {
   return { upserts: rows.length, skipped, moved };
 }
 
-// GET /api/picklist — flat, VIEW+PRINT pick list read from ebay_order_lines (NEEDS_PICK).
-// All paid-but-unshipped lines. `location` = the matched STORED item's CURRENT shelf (via
-// matched_serial; null when location_unknown). `sku` = that WMS serial (what's printed on the
-// physical part), falling back to the raw eBay SKU only for location-unknown lines. Sorted by
-// location A–Z with location-unknown lines LAST (never dropped). READ-ONLY — the eBay orders
-// sync (reconcileOrderLines) does ALL the writing; this route never mutates anything.
+// ── Pick List business-day aging ────────────────────────────────────────────────
+// HawkerWMS sells on eBay US and ships from a US warehouse, so a line's "age" is counted
+// in US business days (Mon–Fri), skipping the holidays below. EDIT THIS LIST as needed —
+// observed US federal holiday dates, 'YYYY-MM-DD' (the day the warehouse is actually closed).
+const HOLIDAYS = new Set([
+  // 2026
+  '2026-01-01', // New Year's Day
+  '2026-01-19', // Martin Luther King Jr. Day
+  '2026-02-16', // Washington's Birthday (Presidents' Day)
+  '2026-05-25', // Memorial Day
+  '2026-06-19', // Juneteenth
+  '2026-07-03', // Independence Day (observed — Jul 4 is a Saturday)
+  '2026-09-07', // Labor Day
+  '2026-10-12', // Columbus Day
+  '2026-11-11', // Veterans Day
+  '2026-11-26', // Thanksgiving Day
+  '2026-12-25', // Christmas Day
+  // 2027
+  '2027-01-01', // New Year's Day
+  '2027-01-18', // Martin Luther King Jr. Day
+  '2027-02-15', // Washington's Birthday (Presidents' Day)
+  '2027-05-31', // Memorial Day
+  '2027-06-18', // Juneteenth (observed — Jun 19 is a Saturday)
+  '2027-07-05', // Independence Day (observed — Jul 4 is a Sunday)
+  '2027-09-06', // Labor Day
+  '2027-10-11', // Columbus Day
+  '2027-11-11', // Veterans Day
+  '2027-11-25', // Thanksgiving Day
+  '2027-12-24', // Christmas Day (observed — Dec 25 is a Saturday)
+]);
+
+// Whole US-Eastern business days elapsed from `from` (a paid/seen timestamp) up to `now`.
+// Both ends are reduced to their America/New_York calendar date, then we count weekdays
+// (Mon–Fri) that aren't HOLIDAYS in the half-open interval (fromDay, today]. Paid today → 0;
+// paid one business day ago → 1. Weekends and holidays never age an order.
+function businessDaysSince(from, now) {
+  const ymd = d => d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); // 'YYYY-MM-DD'
+  let cur   = new Date(ymd(from) + 'T12:00:00Z');   // noon-UTC anchor avoids any DST day-shift
+  const end = new Date(ymd(now)  + 'T12:00:00Z');
+  let count = 0;
+  while (cur < end) {
+    cur = new Date(cur.getTime() + 24 * 60 * 60 * 1000);
+    const dow = cur.getUTCDay();                     // 0=Sun … 6=Sat
+    if (dow >= 1 && dow <= 5 && !HOLIDAYS.has(cur.toISOString().slice(0, 10))) count++;
+  }
+  return count;
+}
+
+// GET /api/picklist — VIEW+PRINT pick list read from ebay_order_lines (NEEDS_PICK), split by age.
+// Each line keeps location/sku/description/locationUnknown and adds businessDaysSincePaid (from
+// paid_time, falling back to first_seen) + paid_time + orderLineItemId. Returns TWO groups:
+//   active = businessDaysSincePaid <= 3  → location A–Z, location-unknown LAST (the daily flow)
+//   errors = businessDaysSincePaid >  3  → most-stale first (the hidden Errors tab)
+// READ-ONLY — no eBay call, no mutation here (the reconcile writes; dismiss/restore mutate).
 app.get('/api/picklist', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT e.matched_serial, e.sku_raw, e.title, e.location_unknown, i.location AS item_location
+      `SELECT e.order_line_item_id, e.matched_serial, e.sku_raw, e.title, e.location_unknown,
+              e.paid_time, e.first_seen, i.location AS item_location
          FROM ebay_order_lines e
          LEFT JOIN items i ON i.serial = e.matched_serial
         WHERE e.disposition = 'NEEDS_PICK'`
     );
+    const now = new Date();
+    const mapped = rows.map(r => {
+      const agingFrom = r.paid_time || r.first_seen;   // NEEDS_PICK is paid, but fall back defensively
+      return {
+        orderLineItemId: r.order_line_item_id,
+        location:        r.location_unknown ? null : (r.item_location || null),
+        sku:             r.location_unknown ? (r.sku_raw || null) : (r.matched_serial || r.sku_raw || null),
+        description:     r.title || null,
+        locationUnknown: r.location_unknown,
+        paid_time:       r.paid_time || null,
+        businessDaysSincePaid: agingFrom ? businessDaysSince(new Date(agingFrom), now) : 0,
+      };
+    });
+    const active = mapped.filter(l => l.businessDaysSincePaid <= 3);
+    const errors = mapped.filter(l => l.businessDaysSincePaid >  3);
+    active.sort((a, b) => {                             // current daily sort — UNCHANGED
+      if (a.locationUnknown !== b.locationUnknown) return a.locationUnknown ? 1 : -1;  // unknowns last
+      return (a.location || '~~~').localeCompare(b.location || '~~~');                 // then location A–Z
+    });
+    errors.sort((a, b) =>                               // oldest first
+      (b.businessDaysSincePaid - a.businessDaysSincePaid)                              // most stale on top
+      || (new Date(a.paid_time || 0) - new Date(b.paid_time || 0)));                   // tie → oldest paid
+    res.json({
+      active, errors,
+      activeCount: active.length, errorsCount: errors.length,
+      fetched: new Date().toISOString(),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/picklist/dismissed — retained archive of manually-dismissed lines (disposition='DISMISSED').
+// Read-only; same shape as a pick line + last_synced. Newest-synced first. Never auto-deleted.
+app.get('/api/picklist/dismissed', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.order_line_item_id, e.matched_serial, e.sku_raw, e.title, e.location_unknown,
+              e.paid_time, e.last_synced, i.location AS item_location
+         FROM ebay_order_lines e
+         LEFT JOIN items i ON i.serial = e.matched_serial
+        WHERE e.disposition = 'DISMISSED'
+        ORDER BY e.last_synced DESC`
+    );
     const lines = rows.map(r => ({
+      orderLineItemId: r.order_line_item_id,
       location:        r.location_unknown ? null : (r.item_location || null),
       sku:             r.location_unknown ? (r.sku_raw || null) : (r.matched_serial || r.sku_raw || null),
       description:     r.title || null,
       locationUnknown: r.location_unknown,
+      paid_time:       r.paid_time || null,
+      lastSynced:      r.last_synced || null,
     }));
-    lines.sort((a, b) => {
-      if (a.locationUnknown !== b.locationUnknown) return a.locationUnknown ? 1 : -1;  // unknowns last
-      return (a.location || '~~~').localeCompare(b.location || '~~~');                 // then location A–Z
-    });
     res.json({ lines, count: lines.length, fetched: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/picklist/dismiss { orderLineItemId } — manually move a NEEDS_PICK line into the
+// retained DISMISSED archive. Guarded to NEEDS_PICK only (never touches SHIPPED/CANCELLED).
+// No eBay call, no moves row, no items mutation (Rule 25). The reconcile's ON CONFLICT keeps
+// DISMISSED untouched, so the line stays dismissed across every future sync.
+app.post('/api/picklist/dismiss', requireAuth, async (req, res) => {
+  const { orderLineItemId } = req.body;
+  if (!orderLineItemId) return res.status(400).json({ error: 'orderLineItemId required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE ebay_order_lines SET disposition = 'DISMISSED'
+        WHERE order_line_item_id = $1 AND disposition = 'NEEDS_PICK'
+        RETURNING order_line_item_id`,
+      [orderLineItemId]
+    );
+    res.json({ ok: true, dismissed: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/picklist/restore { orderLineItemId } — undo a dismiss: DISMISSED → NEEDS_PICK.
+// Guarded to DISMISSED only. The line re-enters the active/errors split on the next /api/picklist
+// read (its age decides which group). No eBay call, no items mutation.
+app.post('/api/picklist/restore', requireAuth, async (req, res) => {
+  const { orderLineItemId } = req.body;
+  if (!orderLineItemId) return res.status(400).json({ error: 'orderLineItemId required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE ebay_order_lines SET disposition = 'NEEDS_PICK'
+        WHERE order_line_item_id = $1 AND disposition = 'DISMISSED'
+        RETURNING order_line_item_id`,
+      [orderLineItemId]
+    );
+    res.json({ ok: true, restored: rows.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

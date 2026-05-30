@@ -199,6 +199,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <div class="nl">eBay</div>
   <button class="ni" data-page="ebay"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2 5m12-5l2 5M9 21a1 1 0 100-2 1 1 0 000 2zm10 0a1 1 0 100-2 1 1 0 000 2z"/></svg>Orders</button>
   <button class="ni" data-page="picklist"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>Pick List</button>
+  <button class="ni" data-page="picklist-errors" style="opacity:.55;font-size:12.5px" title="Stale &amp; dismissed pick lines — retained, never auto-deleted"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.74 4a2 2 0 00-3.48 0L3.16 16.25A2 2 0 005 19z"/></svg>Errors<span id="nav-errors-badge" style="display:none;margin-left:6px;background:var(--err);color:#fff;border-radius:10px;padding:0 7px;font-size:11px;font-weight:700"></span></button>
   <button class="ni" data-page="shipped"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8M9 12h6"/></svg>Shipped</button>
   <button class="ni" data-page="listings"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6M9 16h4"/></svg>Listings</button>
   <button class="ni" data-page="health"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Inventory Health</button>
@@ -389,6 +390,24 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     </div>
   </div>
   <div id="picklist-body"><div class="loading">Loading pick list…</div></div>
+</div>
+
+<!-- ═══════ PICK LIST · ERRORS (stale + dismissed; retained, low-prominence) ═══════ -->
+<div class="page" id="page-picklist-errors">
+  <div class="phr">
+    <div class="ph"><h1>Pick List · Errors</h1><p id="picklist-errors-sub">Stale &amp; dismissed lines — retained, never auto-deleted</p></div>
+    <div style="display:flex;gap:8px" class="no-print">
+      <button class="btn btn-s" onclick="loadPickListErrors()">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+  <div style="font-size:13px;font-weight:700;color:var(--text);margin:6px 0 8px">Stale — over 3 business days</div>
+  <div id="picklist-stale-body"><div class="loading">Loading…</div></div>
+  <div class="divider"></div>
+  <div style="font-size:13px;font-weight:700;color:var(--text);margin:6px 0 8px">Dismissed</div>
+  <div id="picklist-dismissed-body"><div class="loading">Loading…</div></div>
 </div>
 
 <!-- ═══════ SHIPPED ITEMS ═══════ -->
@@ -756,6 +775,7 @@ function navigate(p) {
   if (p === 'ebay') { renderOrders(); if (!ORDERS.length) syncEbayOrders(); }
   if (p === 'listings') { renderListings(); if (!ALL_LISTINGS.length) syncEbayListings(); }
   if (p === 'picklist') loadPickList();
+  if (p === 'picklist-errors') loadPickListErrors();
   if (p === 'shipped') loadShipped();
   if (p === 'health') loadInventoryHealth();
   if (p === 'admin') loadAdmin();
@@ -1420,14 +1440,17 @@ async function loadPickList() {
   var host = document.getElementById('picklist-body');
   try {
     var r = await api('/picklist');
-    var lines = r.lines || [];
+    var lines = r.active || [];                       // active = paid & ≤3 business days (the daily flow)
+    var stale = (r.errorsCount != null) ? r.errorsCount : (r.errors ? r.errors.length : 0);
     var located = lines.filter(function(l){ return !l.locationUnknown; });
     var unknown = lines.filter(function(l){ return l.locationUnknown; });
+    var staleNote = stale ? ' · ' + stale + ' stale (see Errors)' : '';
     document.getElementById('picklist-sub').textContent = lines.length
-      ? lines.length + ' item(s) to pick · ' + located.length + ' located, ' + unknown.length + ' location unknown · ' + new Date().toLocaleString('en-AU')
-      : 'Items to pick — paid & unshipped';
+      ? lines.length + ' item(s) to pick · ' + located.length + ' located, ' + unknown.length + ' location unknown' + staleNote + ' · ' + new Date().toLocaleString('en-AU')
+      : (stale ? 'Nothing current to pick' + staleNote : 'Items to pick — paid & unshipped');
+    updateErrorsNavBadge(stale);
     if (!lines.length) {
-      host.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:24px">Nothing to pick — no paid, unshipped items. Sync eBay orders to refresh.</div>';
+      host.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:24px">Nothing to pick — no paid, unshipped items within 3 business days.' + (stale ? ' ' + stale + ' stale item(s) are waiting in <b>Errors</b>.' : ' Sync eBay orders to refresh.') + '</div>';
       setSynced();
       return;
     }
@@ -1449,6 +1472,80 @@ async function loadPickList() {
 }
 
 function printPickList() { window.print(); }
+
+// ── Pick List · Errors (stale >3 business days + the dismissed archive) ───────────
+// Low-prominence retained view. Stale rows carry a [Dismiss] button (→ DISMISSED archive,
+// out of the daily flow but never deleted); Dismissed rows carry [Restore] (→ back into the
+// active/errors split by age). Both call guarded POST routes; no eBay call, no item mutation.
+async function loadPickListErrors() {
+  setSyncing();
+  var staleHost = document.getElementById('picklist-stale-body');
+  var dismHost  = document.getElementById('picklist-dismissed-body');
+  try {
+    var pl = await api('/picklist');
+    var stale = pl.errors || [];
+    renderPickErrorRows(staleHost, stale, 'stale');
+    var dm = await api('/picklist/dismissed');
+    var dismissed = dm.lines || [];
+    renderPickErrorRows(dismHost, dismissed, 'dismissed');
+    document.getElementById('picklist-errors-sub').textContent =
+      stale.length + ' stale · ' + dismissed.length + ' dismissed · retained, never auto-deleted · ' + new Date().toLocaleString('en-AU');
+    updateErrorsNavBadge(stale.length);
+    setSynced();
+  } catch(e) {
+    setSyncErr(e);
+    showToast('Pick errors load failed: ' + e.message, true);
+    staleHost.innerHTML = '<div class="card" style="text-align:center;color:var(--err);padding:18px">Could not load: ' + e.message + '</div>';
+    dismHost.innerHTML = '';
+  }
+}
+function pickErrRow(l, kind) {
+  var loc = l.locationUnknown ? '<span style="color:var(--muted)">unknown</span>' : (l.location || '—');
+  var ageCell = (kind === 'stale')
+    ? '<td style="white-space:nowrap;color:var(--err);font-weight:600">' + l.businessDaysSincePaid + ' bd</td>'
+    : '<td style="white-space:nowrap;color:var(--muted)">' + (l.paid_time ? new Date(l.paid_time).toLocaleDateString('en-AU') : '—') + '</td>';
+  var btn = (kind === 'stale')
+    ? '<button class="btn btn-s" style="padding:4px 10px;font-size:12px" onclick="dismissPickLine(\'' + l.orderLineItemId + '\')">Dismiss</button>'
+    : '<button class="btn btn-s" style="padding:4px 10px;font-size:12px" onclick="restorePickLine(\'' + l.orderLineItemId + '\')">Restore</button>';
+  return '<tr><td class="mono" style="color:var(--brand)">' + loc + '</td>'
+    + '<td class="mono">' + (l.sku || '—') + '</td>'
+    + '<td>' + (l.description || '') + '</td>'
+    + ageCell
+    + '<td style="text-align:right" class="no-print">' + btn + '</td></tr>';
+}
+function renderPickErrorRows(host, rows, kind) {
+  if (!rows.length) {
+    host.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);padding:16px">'
+      + (kind === 'stale' ? 'No stale lines — every paid order is within 3 business days.' : 'Nothing dismissed.')
+      + '</div>';
+    return;
+  }
+  var ageHead = (kind === 'stale') ? 'Age' : 'Paid';
+  host.innerHTML = '<div class="card"><div class="tw"><table>'
+    + '<thead><tr><th style="width:140px">Location</th><th style="width:130px">SKU</th><th>Item Description</th>'
+    + '<th style="width:64px">' + ageHead + '</th><th style="width:96px" class="no-print"></th></tr></thead>'
+    + '<tbody>' + rows.map(function(l){ return pickErrRow(l, kind); }).join('') + '</tbody></table></div></div>';
+}
+async function dismissPickLine(id) {
+  try {
+    var r = await api('/picklist/dismiss', { method: 'POST', body: { orderLineItemId: id } });
+    showToast(r.dismissed ? 'Dismissed — moved to the Dismissed archive.' : 'Already dismissed or no longer pending.', !r.dismissed);
+    loadPickListErrors();
+  } catch(e) { showToast('Dismiss failed: ' + e.message, true); }
+}
+async function restorePickLine(id) {
+  try {
+    var r = await api('/picklist/restore', { method: 'POST', body: { orderLineItemId: id } });
+    showToast(r.restored ? 'Restored — back on the pick list.' : 'Not in the dismissed archive.', !r.restored);
+    loadPickListErrors();
+  } catch(e) { showToast('Restore failed: ' + e.message, true); }
+}
+function updateErrorsNavBadge(n) {
+  var b = document.getElementById('nav-errors-badge');
+  if (!b) return;
+  if (n > 0) { b.textContent = n; b.style.display = 'inline-block'; }
+  else { b.style.display = 'none'; }
+}
 
 // ── Shipped Items (read-only list of SHIPPED items + eBay ship times) ──
 var SHIPPED_ROWS = [];

@@ -9,6 +9,43 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-05-30
+
+## 01:09 UTC — Pick List age-aware split + retained Errors tab (stale auto-route, dismiss/restore)
+
+**Single deliverable:** an age-aware Pick List that auto-routes stale lines (paid > 3 US business days) off the daily pick sheet into a retained, low-prominence **Errors** tab, with manual **Dismiss** (→ retained archive) and **Restore**. WMS-side writes only, no eBay calls/pushes (Rule 25). **No schema migration** — staleness is a read-time filter; `DISMISSED` already exists in the `ebay_order_lines.disposition` CHECK and is already protected by the reconcile's ON CONFLICT.
+
+### ⚠️ Stale-clone catch (Rules 1, 3)
+This laptop clone was **78 commits behind** `origin/main` at session start (HEAD `2f4c513`, May 27 — pre-`ebay_order_lines`; old `server.js` had no `/api/picklist` at all). `git pull --ff-only` → `0080dc2` (this is also where the file renames CLAUDE_RULES→HAWKER_RULES, CHANGELOG→HAWKER_CHANGELOG, LAST_SESSION→HAWKER_SESSION landed, + `db/migrations/0001-ebay-order-lines`). All work below is against current HEAD. Note: **psql is not installed on this laptop** — verified the live DB via a throwaway Node + `pg` script run through `railway run --service Postgres` (the brief's `railway run -- bash …` failed because the native Railway exe can't spawn `bash` on Windows PATH; `RAILWAY_TOKEN`, not `LAPTOP_TOKEN`, is the var the CLI reads).
+
+### Diagnose-first (Rules 1, E) — Step 0
+Read `GET /api/picklist` (was a flat NEEDS_PICK read → `{lines,count}`), the reconcile `reconcileOrderLines` ON CONFLICT (server.js ~863): **confirmed it never overwrites DISMISSED** (`WHEN …='DISMISSED' THEN 'DISMISSED'`) and never pulls SHIPPED/CANCELLED back to NEEDS_PICK — so a dismissed line stays dismissed across syncs; the `0001` migration (`DISMISSED` already in the CHECK; `paid_time`/`first_seen` columns present, no migration needed); and the frontend nav / `#page-picklist` / `navigate` / `@media print`.
+
+### Built — backend (server.js)
+- **`HOLIDAYS`** (editable `Set` of US federal-holiday `YYYY-MM-DD`, seeded 2026–2027) + **`businessDaysSince(from, now)`**: counts US-Eastern weekdays (Mon–Fri) minus HOLIDAYS in the half-open interval `(fromDay, today]`, both ends reduced to the `America/New_York` calendar date and day-stepped from a noon-UTC anchor (DST-safe). Paid today → 0.
+- **`GET /api/picklist` rebuilt** — each line gains `businessDaysSincePaid` (from `paid_time`, fallback `first_seen`) + `paid_time` + `orderLineItemId`; **returns two groups — `active` (≤ 3 bd; existing daily sort: location A–Z, location-unknown LAST) and `errors` (> 3 bd; most-stale first)** + `activeCount`/`errorsCount`. No mutation; no line dropped.
+- **`GET /api/picklist/dismissed`** — retained DISMISSED archive (same line shape + `lastSynced`), `last_synced DESC`. Read-only.
+- **`POST /api/picklist/dismiss` / `/restore`** `{orderLineItemId}` — single **guarded** `UPDATE`s (NEEDS_PICK→DISMISSED / DISMISSED→NEEDS_PICK only; never touch SHIPPED/CANCELLED). No `moves` row, no `items` mutation, no eBay (Rule 25). Return `{ok,dismissed|restored}` (count).
+
+### Built — frontend (public/index.html)
+- `#page-picklist` (`loadPickList`) now renders only the **`active`** group; print prints only it. Sub-line shows the stale count + "see Errors" and drives the nav badge.
+- **New `#page-picklist-errors`** (11th `.page`, direct child of `<main>`) + a **dimmed/low-prominence "Errors" sidebar entry** with a red count badge (`#nav-errors-badge`, shows the stale count only when > 0). Two sections: **Stale — over 3 business days** (each row + `N bd` + **[Dismiss]**) and **Dismissed** (each row + paid date + **[Restore]**). New fns `loadPickListErrors`/`renderPickErrorRows`/`pickErrRow`/`dismissPickLine`/`restorePickLine`/`updateErrorsNavBadge`; `navigate` wires `picklist-errors`.
+
+### Verified (Rules 1, 17) — against LIVE prod DB (read + non-destructive round-trip)
+Extracted the **real** `businessDaysSince`/`HOLIDAYS` from server.js and ran them on actual `paid_time`s: today(Fri)→0, Thu→1, **Fri 2026-05-22→4 (Memorial Day Mon 25 correctly excluded — holiday logic proven)**, Apr 07→37. **Split: 13 NEEDS_PICK → 10 active (all paid today, 0 bd) + 3 errors (MOD18509 Mar 10/58bd, MOD19995R Apr 07/37bd, EXT869 Apr 12/34bd)** — exactly the brief's "three months-old lines land in errors, today's stay active." **Dismiss/restore round-trip** on the oldest stale OLI (the exact route SQL): dismiss→1, line leaves NEEDS_PICK + appears in DISMISSED, re-dismiss guard→0, restore→1, **final NEEDS_PICK (prod left clean)**. **Guard:** dismiss on a SHIPPED OLI → 0 rows, stays SHIPPED. `node --check` server.js + inline JS OK; **11 `.page` divs all depth-0 siblings, div balance 319/319**; `/api/health` 200 (post-deploy, below).
+
+### STILL PENDING (Ry hands-on — no WMS creds on this laptop)
+The authenticated HTTP + browser-UI pass is Ry's: open **Pick List** (only ≤3-bd items show), open the dimmed **Errors** tab (3 stale lines + badge "3"), **Dismiss** a stale row (→ moves to Dismissed section), **Restore** it (→ back on the list), **Print** (only the active sheet), and confirm a re-sync doesn't pull a dismissed line back. The data/logic layer is fully proven above.
+
+### Behaviour note
+A **DISMISSED line is never auto-ship-moved** even if eBay later ships it (reconcile keeps DISMISSED; Phase-2 ship-move only acts on matched SHIPPED rows). That's intended — dismiss = "handle outside the normal flow." Restore it first if it should ship normally.
+
+### Files
+server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. **No schema change** (SNAPSHOT_SCHEMA untouched). Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated this session → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).** CLAUDE.md + HAWKER_RULES.md unchanged in content (the EOF-newline touch you made on RULES/SESSION mid-session carries no content change).
+
 # 2026-05-29
 
 ## 18:43 UTC — Thread handoff / state snapshot (bookkeeping; no feature code)
