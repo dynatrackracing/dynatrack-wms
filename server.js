@@ -736,6 +736,11 @@ async function fetchStoreOrders(key, days) {
         checkoutStatus: parseXmlValue(checkout, 'Status') || null,             // CheckoutStatus.Status (in head)
         paymentStatus:  parseXmlValue(checkout, 'eBayPaymentStatus') || null,  // CheckoutStatus.eBayPaymentStatus (in head)
         lastModified:   parseXmlValue(checkout, 'LastModifiedTime') || null,   // change-detection timestamp (in head)
+        // Cancel/refund signals (added 2026-05-30) — a refund leaves OrderStatus=Completed, so the
+        // cancel state lives ONLY here. cancelStatus = order CancelStatus (NotApplicable|CancelComplete|…);
+        // refundStatus = MonetaryDetails → Refunds → Refund → RefundStatus ('Succeeded' = money returned).
+        cancelStatus:   parseXmlValue(block, 'CancelStatus') || null,
+        refundStatus:   parseXmlValue(block, 'RefundStatus') || null,
       });
     }
     const totalPages = parseInt(parseXmlValue(xml, 'TotalNumberOfPages') || '1');
@@ -839,7 +844,11 @@ function normalizeSkuKey(s) {
 //   paid      = OrderStatus=Completed AND CheckoutStatus.Status=Complete
 //               AND eBayPaymentStatus=NoPaymentFailure AND PaidTime present.
 //   shipped   = order-level ShippedTime present OR this line's Transaction.ShippedTime present.
-//   cancelled = OrderStatus Cancelled/CancelPending, OR a refund flipping a paid order to Incomplete.
+//   cancelled = OrderStatus Cancelled/CancelPending, OR CancelStatus=CancelComplete, OR a SUCCEEDED
+//               refund (MonetaryDetails RefundStatus='Succeeded' — eBay leaves OrderStatus=Completed
+//               on a refund, so this is the only signal), OR a refund flipping checkout to Incomplete.
+//               (A refund only cancels an UNshipped line — shipped wins below, so a post-ship return
+//               stays SHIPPED; its item is handled by the returns flow, not un-shipped here.)
 //   disposition: shipped→SHIPPED; else cancelled→CANCELLED; else paid→NEEDS_PICK; else skip (unpaid/open).
 //     MONOTONIC on conflict: a row already SHIPPED/CANCELLED/DISMISSED is never pulled back to
 //     NEEDS_PICK, and DISMISSED (a manual decision) is never overwritten by the sync.
@@ -867,7 +876,9 @@ async function reconcileOrderLines(orderList) {
               && o.paymentStatus === 'NoPaymentFailure'
               && paidTimePresent;
     const cancelledOrder = orderStatus === 'Cancelled' || orderStatus === 'CancelPending'
-              || (o.checkoutStatus === 'Incomplete' && paidTimePresent);  // refund flipped a paid order back to Incomplete
+              || o.cancelStatus === 'CancelComplete'                        // cancellation completed (OrderStatus may stay Completed)
+              || o.refundStatus === 'Succeeded'                             // a succeeded refund undid the sale (eBay keeps OrderStatus=Completed)
+              || (o.checkoutStatus === 'Incomplete' && paidTimePresent);    // refund flipped a paid order back to Incomplete
 
     for (const line of (o.items || [])) {
       const oli = line.orderLineItemId

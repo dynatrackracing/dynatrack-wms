@@ -11,6 +11,39 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-30
 
+## 05:20 UTC — Reconcile refund/cancel detection fix (refunded lines now leave NEEDS_PICK)
+
+**Single deliverable:** fix the reconcile so refunded/cancelled sold lines reliably leave NEEDS_PICK (root cause of stale pick-list strays). eBay READ-ONLY (Rule 25 — probe + sync are reads). No schema migration.
+
+### Diagnose (Step 0)
+`fetchStoreOrders` parses ship/cancel from: `o.shipped = parseXmlValue(block,'ShippedTime')!==''`, per-line `Transaction.ShippedTime`, `OrderStatus`, `CheckoutStatus.Status`/`eBayPaymentStatus`. `reconcileOrderLines`: `cancelledOrder = OrderStatus∈{Cancelled,CancelPending} OR (checkout=Incomplete && paid)` — **never reads `CancelStatus`, `MonetaryDetails`/refunds.**
+
+### Step 1 — read-only eBay probe on the 3 strays (PII redacted), via `railway run --service dynatrack-wms` (holds the prefixed `{DYNATRACK,AUTOLUMEN}_TRADING_API_*` creds + DATABASE_URL)
+- **EXT869** (dynatrack, paid Apr 12): OrderStatus=Completed, Checkout=Complete, **no ShippedTime**, **`RefundStatus=Succeeded` (PaymentRefund, Apr 13)** → **class (b) refund missed**.
+- **MOD19995R** (autolumen, paid Apr 7): identical — **`RefundStatus=Succeeded`** (Apr 8) → **class (b)**.
+- **MOD20284** (dynatrack, paid May 29): no ShippedTime, **`RefundStatus`=(none)** → **class (c) genuinely paid+unshipped, not a bug** (correct live pick).
+  Key: `MonetaryDetails` is present even on a normal order, so presence ≠ refund; **`RefundStatus='Succeeded'` is the distinguishing node.** No ship-detection defect found (no missed ShippedTime; the S3 106-item ship-move already proved ship parsing works).
+
+### Step 2 — fix (server.js)
+- `fetchStoreOrders` now also emits `cancelStatus = parseXmlValue(block,'CancelStatus')` and `refundStatus = parseXmlValue(block,'RefundStatus')`.
+- `reconcileOrderLines` `cancelledOrder` gains `|| o.cancelStatus==='CancelComplete' || o.refundStatus==='Succeeded'`. Ship-first precedence + monotonic ON CONFLICT unchanged → a shipped-then-refunded return stays SHIPPED; a refunded **un**shipped line → CANCELLED (its matched item correctly **stays STORED** — still on the shelf; CANCELLED never triggers Phase-2 ship-move). DISMISSED still never overwritten.
+
+### Step 3 — verify live (read-only; no writes)
+- **Fixed derivation vs live eBay:** EXT869→**CANCELLED**, MOD19995R→**CANCELLED**, MOD20284→**NEEDS_PICK** — all PASS.
+- **All 13 *current* NEEDS_PICK probed against live eBay → all stay NEEDS_PICK** (none refunded/shipped) — the fix does **not** over-cancel legitimate picks.
+- **Monotonic flip (exact ON CONFLICT CASE, pure SELECT):** a refunded NEEDS_PICK row → CANCELLED on next sync; idempotent (CANCELLED + later CANCELLED ⇒ CANCELLED; + a stray NEEDS_PICK ⇒ kept CANCELLED). EXT869 item = STORED, 0 matched SHIPPED lines ⇒ Phase 2 leaves it alone.
+- `node --check` server.js OK. (`/api/health` post-deploy — pending push.)
+
+### ⚠️ Two caveats (as requested — NOT fixed here)
+1. **Already-DISMISSED strays won't auto-correct.** Since first diagnosis, **EXT869 and MOD19995R were DISMISSED** (via the new Errors tab) — and the reconcile never overwrites DISMISSED, so they stay DISMISSED and their items stay STORED until hand-fixed. They're already off the active pick list, so the fix is forward-looking: it stops *future* refunds from becoming strays needing manual dismissal. (MOD18509, Mar 10, also no longer NEEDS_PICK — same.)
+2. **Anything paid >90 days ago is outside the GetOrders window** and is never re-fetched, so its line won't be re-derived at all (won't auto-flip regardless of this fix).
+
+### Files
+server.js, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `<pending>`. **(Note: origin/main is still at `c97bd88`; the soft-archive commits `bf52e2e`+`9a54e86` AND this fix are LOCAL — all deploy together on the next authorized push.)**
+
+### Memory files
+HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
+
 ## 04:54 UTC — Soft-archive: decommission/scrap items (closes the SCRAP leak in Inventory Health)
 
 **Single deliverable:** a reversible way to mark a live item as **decommissioned/scrapped** so it leaves active inventory + every report while its `moves` history is retained. This is the long-pending **soft-archive (Briefs 3a/3b)** and it closes the SCRAP leak that polluted Inventory Health (a scrapped part still matched eBay / counted as on-shelf). Schema change = migration (Rule 9), `moves` append-only (Rule 13), eBay untouched (Rule 25).
