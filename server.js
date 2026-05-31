@@ -829,8 +829,15 @@ app.get('/api/ebay/:store/orders', requireAuth, async (req, res) => {
 });
 
 // ── Pick List (sold-but-unshipped orders → WMS shelf locations) ─────────────────
-// Rule 8 SKU↔serial normalization. MUST stay byte-identical to the frontend copy
-// (normalizeSkuKey inside loadInventoryHealth in public/index.html). Centralize later.
+// Rule 8 SKU↔serial normalization. MUST stay byte-identical to the canonical frontend copy
+// (top-level normalizeSkuKey in public/index.html). Centralize later (#14; blocked by the
+// no-build-step single-file frontend, Rule 18).
+// ⚠️ The frontend also has a `listedSerialKeys` tokenizer (2026-05-31) that splits a multi-serial
+// eBay SKU field ("MOD15959V 16367V 18936V Autolumen") into each component serial with prefix
+// inheritance — used by the Inventory Health LISTED/UNLISTED matcher. The order-reconcile below
+// still matches on the SINGLE `line.sku` (one OrderLineItem = one SKU string). When the PARKED
+// multi-serial pick/ship work lands (a sold unit of a multi-serial listing can't be attributed to
+// one physical serial without scan-verify, #21), mirror `listedSerialKeys` here byte-identical.
 function normalizeSkuKey(s) {
   return (s || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
 }

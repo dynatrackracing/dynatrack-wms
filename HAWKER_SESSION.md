@@ -9,6 +9,38 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-05-31
+
+## 16:58 UTC — Multi-serial SKU tokenizer: listings packing several serials now match every part
+
+**Single deliverable:** make the listed-SKU matcher recognize listings whose eBay "Custom label (SKU)" field packs MULTIPLE WMS serials, so those parts stop reading as falsely unlisted. eBay READ-ONLY (Rule 25); frontend matching logic; no schema change. **SCOPE: LISTED/UNLISTED matching only** (the order-reconcile/pick side is PARKED — see end).
+
+### 📌 PERMANENT CONTEXT (the discovery — record so it's never re-learned)
+eBay's **"Custom label (SKU)" field on many listings holds several space-separated WMS serials plus sometimes a store tag**, e.g. `"MOD15959V 16367V 18936V Autolumen"` or `"ECU0544V 0550V 0551V 0553V Autolumen"`. These are **NOT eBay Variations** (confirmed: GetMyeBaySelling ActiveList returns zero `<Variations>` nodes across all listings) — they are **multi-quantity listings of distinct one-of-one parts with every unit's serial crammed into the one SKU text field**. The matcher used to normalize the WHOLE string as one SKU, fail, and read every part in these listings as unlisted/unmatched. (This also causes some location-unknown pick lines — the PARKED order side.)
+
+### Step 0 diagnosis (read-only eBay + DB probes)
+- **3,812 listings; 118 are multi-serial** (whitespace-delimited); 96 carry a store tag.
+- **Delimiter = whitespace. Store tags = `AUTOLUMEN`, `DYNATRACK`** (+ one typo `AUTOLUMENA`).
+- **PREFIX-INHERITANCE confirmed (make-or-break):** in `"MOD15959V 16367V 18936V"` the bare tokens match WMS serials only as `MOD16367`/`MOD18936` (prefix inherited from the first token) — **78/91 bare tokens match the inherited form vs 9 as-is**, and those 9 are coincidental hits on legacy zero-padded serials (`000002`…), not real bare matches.
+- **Grammar noise the tokenizer must tolerate:** internal-id suffix `MOD10131/000046` (take before `/`), trailing `*`/commas, qty markers `(3)` and embedded `MOD16197(3)`, pure-junk words (`Garage`/`Core`/`Bin`/`Ford`/`Seats`/`HOLD`/`OFF`/`?`) → skipped (no digit ⇒ no match).
+
+### Built (frontend, public/index.html)
+- **Hoisted `normalizeSkuKey` out of `loadInventoryHealth` to a TOP-LEVEL fn** (one canonical frontend copy; #14 — true cross-file centralization is blocked by the no-build single-file frontend, Rule 18) and added **`listedSerialKeys(field)`** beside it: splits on whitespace, strips store tags / internal-id / punctuation / qty markers, applies prefix inheritance, normalizes each token → array of WMS serial keys. Loud byte-identical-with-server comment.
+- **`loadInventoryHealth` `ebayByKey`** now registers each live listing under EVERY key `listedSerialKeys` returns (was: one key per whole SKU string). So a multi-serial listing is "listed" for all its component parts; Inventory Health / cross-listed / the future unlisted view all read the enriched set.
+- **server.js:** comment-only — updated the `normalizeSkuKey` note to point at the new top-level frontend location + flag that `listedSerialKeys` must be mirrored here byte-identical when the parked order-side lands. (No server behaviour change.)
+
+### Verified live (read-only; against the REAL shipped functions, extracted from index.html)
+Tokenizer on live listings: `"ECU0139V 0144V"`→`[ECU0139,ECU0144]`, `"MOD10131/000046  10221/000044"`→`[MOD10131,MOD10221]`, `"MOD14075 14076 (3)"`→`[MOD14075,MOD14076]`, `"Garage Core Bin"`/`"Ford SeatsV"`→`[]`. Against items (STORED active): **WMS-Only / false-unlisted dropped 1298 → 1009 = 289 STORED items rescued**; **eBay-Only phantom keys 348 → 175** (compound garbage strings replaced by real component serials → cross-listed/oversell now sees them). **Over-match check clean:** of 352 new keys, 289 are real STORED items; the other 63 are legitimately unresolved (sold/staged), not false matches. `node --check` server.js + inline JS OK; div balance 330/330.
+
+### PARKED (do NOT build here)
+The order-reconcile/pick side: when a multi-serial listing sells ONE unit, eBay carries only the compound SKU, so you can't tell which physical serial shipped. That pick line should show ALL candidate serials and let **scan-verify (#21)** confirm which goes out. Separate, trickier deliverable. (`reconcileOrderLines` still matches the single `line.sku`.)
+
+### Files
+public/index.html, server.js (comment), SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
+
 # 2026-05-30
 
 ## 05:42 UTC — Capture listing StartTime in ingestion (variation-SKU handling deferred — no data)

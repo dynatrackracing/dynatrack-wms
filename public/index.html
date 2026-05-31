@@ -1770,6 +1770,44 @@ var healthFilter     = '';
 var healthStatusFilter = 'all';
 var healthStoreFilter  = 'all';
 
+// ── SKU ↔ WMS-serial matching (Rule 8) — CANONICAL frontend copy ─────────────────
+// normalizeSkuKey MUST stay byte-identical to the server.js copy (used by reconcileOrderLines).
+// listedSerialKeys resolves an eBay "Custom label (SKU)" field that may pack MULTIPLE one-of-one
+// serials into one string (whitespace-delimited) + a store tag + freehand notes, e.g.
+//   "MOD15959V 16367V 18936V Autolumen"  ->  [MOD15959, MOD16367, MOD18936]
+//   "ECU0544V 0550V 0551V 0553V"         ->  [ECU0544, ECU0550, ECU0551, ECU0553]
+// PREFIX INHERITANCE (verified 2026-05-31 against items: 78/91 bare tokens match inherited vs 9 as-is):
+// a bare numeric token inherits the alpha prefix of the most recent prefixed token. Store tags
+// (AUTOLUMEN/DYNATRACK + typo AUTOLUMENA), internal-id suffixes (MOD10131/000046 -> MOD10131),
+// trailing */commas, qty markers ((3), MOD16197(3)), and pure-junk words (Garage/Ford/HOLD/?) are
+// stripped/skipped. NOTE: when the PARKED order-reconcile multi-serial work lands, mirror
+// listedSerialKeys into server.js byte-identical (see the normalizeSkuKey note there).
+function normalizeSkuKey(sku) {
+  return (sku || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
+}
+function listedSerialKeys(field) {
+  var STORE_TAGS = { AUTOLUMEN: 1, DYNATRACK: 1, AUTOLUMENA: 1 };
+  var toks = (field || '').toUpperCase().split(/\s+/);
+  var keys = [], seen = {}, prefix = '';
+  for (var i = 0; i < toks.length; i++) {
+    var orig = toks[i];
+    if (!orig) continue;
+    if (/^\(\d+\)$/.test(orig)) continue;          // standalone quantity marker like (3)
+    var t = orig.split('/')[0]                      // "MOD10131/000046" -> "MOD10131" (drop internal id)
+              .replace(/\(\d+\)$/, '')              // "MOD16197(3)" -> "MOD16197"
+              .replace(/[^A-Z0-9]/g, '');           // strip *, commas, stray punctuation
+    if (!t || STORE_TAGS[t]) continue;
+    var m = t.match(/^([A-Z]+)?(\d+)([A-Z]*)$/);
+    if (!m) continue;                               // pure-junk word (no digits) — skip
+    if (m[1]) prefix = m[1];                         // a prefixed token sets the running prefix
+    var pfx = m[1] || prefix;
+    if (!pfx) continue;                              // bare token before any prefix — can't resolve
+    var key = normalizeSkuKey(pfx + m[2] + (m[3] || ''));
+    if (key && !seen[key]) { seen[key] = 1; keys.push(key); }
+  }
+  return keys;
+}
+
 async function loadInventoryHealth() {
   // DIAGNOSTIC — remove after blank-page bug confirmed resolved (counts/shapes only, no PII)
   console.log('[Inventory Health] render start · listings:', ALL_LISTINGS.length,
@@ -1793,11 +1831,7 @@ async function loadInventoryHealth() {
     ]);
 
     // ── Build lookup maps ──────────────────────────────
-    // eBay: normalized sku → listing object
-    // Normalize = strip trailing letter suffix (R=Refurb, V=Variant etc)
-    function normalizeSkuKey(sku) {
-      return (sku || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
-    }
+    // eBay normalize + multi-serial tokenizer are now top-level (normalizeSkuKey / listedSerialKeys).
 
     // Exclude SOLD-OUT listings (available <= 0) from the reconciliation. eBay keeps sold one-of-ones
     // in ActiveList with QuantityAvailable 0; counting them inflates eBay Inventory and dumps phantom
@@ -1810,17 +1844,18 @@ async function loadInventoryHealth() {
 
     // eBay: normalized key → { stores:{<storeKey>:bestListing}, best:listing } — UNION of all stores.
     // Tracking presence per store is what enables the Cross-listed (oversell-risk) bucket.
+    // A listing's SKU may pack MULTIPLE serials → it is "listed" for EVERY serial it resolves to
+    // (listedSerialKeys), so each component part matches its WMS item instead of reading unlisted.
     var ebayByKey = {};
     liveListings.forEach(function(l) {
-      var raw = (l.sku || '').trim().toUpperCase();
-      if (!raw) return;
-      var key = normalizeSkuKey(raw);
       var store = l.store || 'unknown';
-      if (!ebayByKey[key]) ebayByKey[key] = { stores: {}, best: null };
-      var rec = ebayByKey[key];
-      // keep the highest-qty listing per store for this key
-      if (!rec.stores[store] || l.qty > (rec.stores[store].qty || 0)) rec.stores[store] = l;
-      if (!rec.best || l.qty > (rec.best.qty || 0)) rec.best = l;
+      listedSerialKeys(l.sku).forEach(function(key) {
+        if (!ebayByKey[key]) ebayByKey[key] = { stores: {}, best: null };
+        var rec = ebayByKey[key];
+        // keep the highest-qty listing per store for this key
+        if (!rec.stores[store] || l.qty > (rec.stores[store].qty || 0)) rec.stores[store] = l;
+        if (!rec.best || l.qty > (rec.best.qty || 0)) rec.best = l;
+      });
     });
 
     // WMS: normalized serial → array of items
