@@ -80,7 +80,7 @@ These are non-negotiable constraints for HawkerWMS development. Violating any of
 
 ## DATA INTEGRITY RULES
 
-27. **Production data counts (as of 2026-05-31 CUTOVER):** 548 locations (526 SHELF_BIN + 21 UNLISTED_TOTE + 1 empty SHIPPED), 3,390 items (all STORED, intake_date NULL), 3,390 moves (all import-baseline), 12 serial sequences (vestigial). Live-inventory-only baseline — shipped items were dropped at cutover (eBay/ShippingEasy own shipped now). If you see drastically different counts in a session, investigate before making changes — something may be wrong. *(Prior 2026-04-02 baseline 537/3,380/3,969 superseded by the cutover reload.)*
+27. **Production data counts (as of 2026-05-31 CUTOVER):** 548 locations (526 SHELF_BIN + 21 UNLISTED_TOTE + 1 empty SHIPPED), 3,390 items (all STORED; **intake_date backfilled 2026-05-31** from the extract's createdAt — was NULL at cutover), 3,390 moves (all import-baseline), 12 serial sequences (vestigial). Live-inventory-only baseline — shipped items were dropped at cutover (eBay/ShippingEasy own shipped now). If you see drastically different counts in a session, investigate before making changes — something may be wrong. *(Prior 2026-04-02 baseline 537/3,380/3,969 superseded by the cutover reload.)*
 
 28. **The `hawker-import.sql` file in the repo is the initial seed,** not a re-runnable migration. Re-running it on a populated database will fail on UNIQUE constraints. Do not run it without a fresh/empty DB.
 

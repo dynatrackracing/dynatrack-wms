@@ -11,6 +11,30 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-31
 
+## 20:34 UTC — Backfill items.intake_date from the extract's createdAt (REVERSES the cutover's "age forward only")
+
+**⚠️ DELIBERATE REVERSAL — do not flag as contradicting the 18:11 cutover note.** The cutover left `intake_date` NULL ("age forward only") because the old WMS rewrites scan dates on re-consolidation (last-touched, not true first-intake). **Ry decided 2026-05-31 to backfill anyway:** for an unlisted-aging view, a real date beats NULL, and the caveat is accepted. Data UPDATE only — `intake_date` exists (migration 0002), so no schema/migration. No `moves` rows (Rule 13 is for location/status, not a date correction). Keyed on `serial` (immutable, Rule 30). eBay untouched (Rule 25).
+
+### Step 0 (read-only) — settled the memory conflict + picked the field
+- Live `intake_date` state: total **3,393** / with-date **3** / NULL **3,390**. (Records said 0 with-date — the real number is **3**: post-cutover app-intakes that stamp `intake_date`. The backfill's `IS NULL` guard protects them.)
+- Extract `wms-final-extract-2026-05-30 (6).json` confirmed present; all 3,390 live (non-SHIPPED) items have both `createdAt` + `updatedAt`, all UTC, none future/absurd.
+- **Field = `createdAt`** (Ry's call, after seeing the distribution). `createdAt` (true first-seen) vs `updatedAt` (last-handled): `updatedAt` collapses **84% into May (2,846)** because the bulk re-consolidation rewrote ~half the dates (50.7% shifted 31–90 days); `createdAt` preserves the real spread (Mar 1,780 / Apr 508 / May 1,045). For aging, `createdAt` is the better signal.
+
+### Backfill (gated, mirrored the cutover)
+Throwaway tmp script (no new repo file — Rule C; mirrors the cutover harness): `UPDATE items SET intake_date = extract.createdAt::date(UTC) WHERE serial=$1 AND intake_date IS NULL` (fills NULLs only — never clobbers a real scan date), single txn, chunked VALUES-join. **Dry-run (BEGIN…ROLLBACK)** reconciled to the row: 3,390 updated → 0 remaining NULL, 0 future-dated, 0 NULL-serials-not-in-extract. **Ry: explicit go-ahead** (createdAt confirmed) → `--commit`. Wrote a precise rollback artifact `~/hawker-intake-backfill-rollback-2026-05-31T20-32-45Z.json` (the exact 3,390 serials; undo = set them back to NULL).
+
+### Verify (fresh connection) — ALL PASS
+Live items **3,393**, all with `intake_date`, **0 NULL**; span **2026-02-06 .. 2026-05-31** (54 distinct days); **0 future-dated**, 0 before-2025; monthly Feb 57 / Mar 1,780 / Apr 508 / May 1,048. `/api/health` 200. No schema change; no `moves` written. Updated SNAPSHOT_SCHEMA + HAWKER_RULES rule 27 ("intake_date NULL" → "backfilled 2026-05-31 from createdAt").
+
+### Phase-2 audit (read-only, ran now per the brief — feeds the "incomplete SKU" work)
+Prefix histogram (live): MOD 1652 · INT 506 · ENG 448 · FUS 249 · ECU 182 · EXT 129 · RYN 106 · (none) 60 · CLU 51 · **PS 3 (2-letter!)** · E 2 · HTTPS 2 · M 1 · MFD 1 · EOD 1. → **Phase 2's "incomplete" rule must tolerate 2–4-letter prefixes (PS is 2; RYN is a real 3-letter), not assume exactly 3.** "Incomplete SKU" population (`serial !~ '^[A-Z]{2,4}[0-9]+$'`): **236 items** (the zero-padded numerics `000002…` + malformed `HTTPS…`/single-letter). That's what Phase 2 will pull out.
+
+### Files
+SNAPSHOT_SCHEMA.md, HAWKER_RULES.md (rule 27), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. **Data-only prod change** (no app code). Rollback: Railway snapshot + `~/hawker-intake-backfill-rollback-*.json`. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG + HAWKER_RULES updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 ## 18:47 UTC — Scan & Move: Scanner|Manual input toggle (fixes manual-typing junk serials, deferred #6)
 
 **Single deliverable, frontend only** (public/index.html; no server/schema/eBay — Rule 25).
