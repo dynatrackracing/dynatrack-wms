@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 496474e @ 2026-05-31 (intake_date backfill — docs only; the data write went directly to prod DB). Cutover + toggle are LIVE on origin/main. Pushing this now per the brief (Rule 4).
-STAMP UPDATED BY: Claude Code, session 20:34 UTC 2026-05-31
+LAST PUSHED COMMIT: f71d43e @ 2026-05-31 (Inventory Health Phase 2 — Incomplete section + age bands). Cutover + backfill + toggle all LIVE on origin/main. Pushing this now per the brief (Rule 4).
+STAMP UPDATED BY: Claude Code, session 21:06 UTC 2026-05-31
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -31,7 +31,7 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 ~57 items store **suffixed serials** (`INT4306R`) in `items.serial`, contrary to the bare-serial convention (Rule 8). This change tolerates them as valid (correct), so not blocking — a later dedicated normalize-to-bare pass may be worth it. Flagging, not fixing.
 
 ### Files
-public/index.html, SNAPSHOT_FRONTEND.md (no SNAPSHOT_ROUTES — `/api/items` unchanged), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No server/schema change. Commit `<pending>`.
+public/index.html, SNAPSHOT_FRONTEND.md (no SNAPSHOT_ROUTES — `/api/items` unchanged), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No server/schema change. Commit `f71d43e`.
 
 ### Memory files
 HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
