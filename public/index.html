@@ -103,6 +103,10 @@ tr:hover td{background:var(--bg3)}
 .scan-box:focus-within{border-color:var(--brand);border-style:solid;box-shadow:0 0 0 4px var(--brand-d)}
 .scan-box input{background:var(--bg);border:1.5px solid var(--border);border-radius:11px;padding:14px 20px;font-size:16px;font-family:'Fira Code',monospace;color:var(--text);outline:none;width:100%;max-width:340px;text-align:center;transition:all .2s}
 .scan-box input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-d)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg2)}
+.seg-btn{appearance:none;-webkit-appearance:none;border:none;background:transparent;color:var(--text2);font-family:inherit;font-size:12px;font-weight:600;padding:5px 13px;cursor:pointer;transition:background .15s,color .15s}
+.seg-btn:not(.seg-on):hover{background:var(--bg3)}
+.seg-on{background:var(--brand);color:#fff}
 .fg{margin-bottom:16px}
 .fl{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;display:block;text-transform:uppercase;letter-spacing:.06em}
 .fi2{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:9px;padding:10px 14px;font-size:14px;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;outline:none;transition:all .2s}
@@ -245,7 +249,13 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   <!-- STEP 1 · Scan Items (append each scan to the batch list) -->
   <div id="scan-step-1" style="max-width:760px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:13px;font-weight:600">1 · Scan Items <span id="batch-count" style="color:var(--muted);font-weight:500">(0)</span></div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:600">1 · Scan Items <span id="batch-count" style="color:var(--muted);font-weight:500">(0)</span></div>
+        <div class="seg" role="group" aria-label="Input mode">
+          <button type="button" id="seg-scanner" class="seg-btn seg-on" onclick="setScanMode('scanner')">Scanner</button>
+          <button type="button" id="seg-manual" class="seg-btn" onclick="setScanMode('manual')">Manual</button>
+        </div>
+      </div>
       <div id="wd-wrap" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px;font-size:12px;flex-wrap:wrap">
         <label class="fl" style="margin:0">Working date</label>
         <input type="date" id="working-date" onchange="setWorkingDate(this.value)" style="font-family:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text)">
@@ -254,8 +264,11 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     </div>
     <div class="scan-box">
       <svg style="width:52px;height:52px;margin:0 auto 14px;opacity:.25;display:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/></svg>
-      <input type="text" id="scan-in" placeholder="Scan or type serial, then Enter…" autofocus autocomplete="off">
-      <p style="font-size:11px;color:var(--muted);margin-top:10px">Scanner auto-submits · or press Enter · type a serial for manual entry</p>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap">
+        <input type="text" id="scan-in" placeholder="Scan or type serial, then Enter…" inputmode="none" autofocus autocomplete="off">
+        <button type="button" class="btn btn-p" id="scan-add-btn" onclick="commitScan()" style="display:none">Add</button>
+      </div>
+      <p id="scan-mode-hint" style="font-size:11px;color:var(--muted);margin-top:10px">Scanner mode: items are added automatically after scanning.</p>
     </div>
     <div class="card" style="margin-top:14px"><div class="tw"><table><thead><tr><th>Serial</th><th>Status</th><th class="no-print"></th></tr></thead><tbody id="batch-list"><tr><td colspan="3" style="color:var(--muted);text-align:center;padding:16px">No items scanned yet</td></tr></tbody></table></div></div>
     <div style="display:flex;gap:8px;margin-top:12px">
@@ -993,6 +1006,10 @@ function refreshWorkingDateStyle() {
 // commits immediately. Each commit APPENDS to the batch (Step 1); refocus keeps the scan rhythm.
 var scanTimer = null, locScanTimer = null;
 var SCAN_FLUSH_MS = 80;                 // within-scan keystrokes <20ms apart; tuned for HID bursts
+// Input mode for Step 1's #scan-in. 'scanner' = HID auto-flush after SCAN_FLUSH_MS (a scanner dumps
+// the whole code in one burst); 'manual' = NO auto-flush (a human pauses >80ms between letters, which
+// would otherwise flush a junk single-character serial). Always boots to 'scanner'; NOT persisted.
+var scanMode = 'scanner';
 function commitScan() {
   clearTimeout(scanTimer); scanTimer = null;
   var el = document.getElementById('scan-in');
@@ -1001,10 +1018,31 @@ function commitScan() {
   if (code) addToBatch(code);           // append to batch list (known → status; unknown → NEW row, no modal)
   el.focus();                           // ready for the next scan
 }
+// Scanner | Manual toggle (deferred #6). Switches the auto-flush on/off + keyboard/hint/Add button.
+// Scanner: HID burst auto-commits (timer armed on input). Manual: type → Enter or tap Add (no timer).
+function setScanMode(mode) {
+  scanMode = (mode === 'manual') ? 'manual' : 'scanner';
+  var manual = scanMode === 'manual';
+  var sc = document.getElementById('seg-scanner'), mn = document.getElementById('seg-manual');
+  var add = document.getElementById('scan-add-btn'), hint = document.getElementById('scan-mode-hint'), inp = document.getElementById('scan-in');
+  if (sc) sc.classList.toggle('seg-on', !manual);
+  if (mn) mn.classList.toggle('seg-on', manual);
+  if (add) add.style.display = manual ? '' : 'none';
+  if (hint) hint.textContent = manual
+    ? 'Manual mode: type a serial and press Enter or tap Add.'
+    : 'Scanner mode: items are added automatically after scanning.';
+  if (inp) {
+    inp.setAttribute('inputmode', manual ? 'text' : 'none');  // Manual shows the Android keyboard; Scanner suppresses it
+    clearTimeout(scanTimer); scanTimer = null;                // cancel any pending auto-flush on switch
+    inp.focus();
+  }
+}
 (function bindScanIn() {
   var el = document.getElementById('scan-in');
-  el.addEventListener('input', function() { clearTimeout(scanTimer); scanTimer = setTimeout(commitScan, SCAN_FLUSH_MS); });
-  el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); commitScan(); } });
+  // Only arm the auto-flush in Scanner mode — in Manual mode a slow typist must not flush mid-serial.
+  el.addEventListener('input', function() { clearTimeout(scanTimer); if (scanMode === 'scanner') scanTimer = setTimeout(commitScan, SCAN_FLUSH_MS); });
+  el.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); commitScan(); } });  // Enter commits in BOTH modes
+  setScanMode('scanner');   // single source of truth for the initial mode UI (boots to Scanner)
 })();
 
 // ── Bulk batch: scan many items in Step 1 → one destination → confirmed commit ─────────────

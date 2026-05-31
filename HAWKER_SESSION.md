@@ -11,6 +11,31 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-31
 
+## 18:47 UTC — Scan & Move: Scanner|Manual input toggle (fixes manual-typing junk serials, deferred #6)
+
+**Single deliverable, frontend only** (public/index.html; no server/schema/eBay — Rule 25).
+
+### The bug
+`#scan-in` armed `setTimeout(commitScan, SCAN_FLUSH_MS=80)` on every keystroke. A scanner dumps a serial in <80ms → one clean flush; a human typing pauses >80ms between letters → flushes after the first char ("E" of ENG1234) and stages a junk serial. Fix = a mode toggle that disables the auto-flush when typing.
+
+### Diagnose-first (Rule 1)
+Read the real `#page-scan` Step 1 markup, `commitScan` (the input `input`→timer + `keydown` Enter listeners), `SCAN_FLUSH_MS`, `addToBatch`, `loadScanLocations`, `resetScan` — wiring matched the brief exactly (`resetScan` doesn't touch mode; Step 2's `#loc-filter` untouched).
+
+### Built (mirrors old WMS Scanner|Manual layout, in HawkerWMS light theme — Rule 21)
+- Module var `var scanMode = 'scanner'` — always boots to Scanner, NOT persisted.
+- **Segmented `[Scanner | Manual]` toggle** in the Step 1 card header (grouped left with the title; working-date stays right). New `.seg/.seg-btn/.seg-on` CSS (navy active on beige, light theme).
+- **`setScanMode(mode)`** restyles the active segment, toggles the **Add** button (`#scan-add-btn`, visible Manual-only, → `commitScan` = same path as Enter), swaps the hint (`#scan-mode-hint`: *"Scanner mode: items are added automatically after scanning."* / *"Manual mode: type a serial and press Enter or tap Add."*), sets `inputmode` (Manual `text` → Android keyboard; Scanner `none` → keyboard suppressed), clears any pending timer, refocuses `#scan-in`.
+- **Auto-flush gated:** the `input` listener arms the timer ONLY when `scanMode==='scanner'`. **Enter commits in BOTH modes** (preventDefault, unchanged). `commitScan` internals untouched beyond the listener guard. Init calls `setScanMode('scanner')` as the single source of truth.
+
+### Verify (Rule 17)
+Served HTML carries the toggle + `scanMode` + both hint strings + Add button + the `scanMode==='scanner'` gate; `node --check` inline JS OK; **11 `.page` divs all depth-0 siblings; div balance 333/333** (HEAD 330 + 3 new wrapper/seg divs, still balanced); `/api/health` 200. HID timing isn't headless-testable → **Ry's tablet test:** (a) Scanner — 3 fast scans → 3 whole rows, no single-letter rows; (b) Manual — type ENG1234+Enter → one clean row (no premature "E"); type another + tap Add → adds; (c) back to Scanner — scanning still auto-adds.
+
+### Files
+public/index.html, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/server change. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 ## 18:11 UTC — 🚀 CUTOVER: live-inventory baseline reload (shipped dropped; HawkerWMS is now the system of record)
 
 **THE CUTOVER.** Clean-reloaded prod from the old-WMS final extract as a **live-inventory-only** baseline. Shipped items dropped (eBay + ShippingEasy own shipped going forward). Followed the architect brief's gated sequence; nothing destructive ran before the human Railway snapshot + an explicit commit go-ahead.
