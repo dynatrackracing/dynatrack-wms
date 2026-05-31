@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 4be8c9d @ 2026-05-30 05:43 UTC (⚠️ LOCAL ONLY — origin/main is still at c97bd88; soft-archive + reconcile-fix + StartTime all await an authorized push)
-STAMP UPDATED BY: Claude Code, session 05:42 UTC
+LAST PUSHED COMMIT: 0ef6200 @ 2026-05-30 (origin/main; soft-archive + reconcile-fix + StartTime are LIVE). Local HEAD 9307667 (multi-serial SKU tokenizer) is ahead — awaits an authorized push.
+STAMP UPDATED BY: Claude Code, session 16:58 UTC 2026-05-31
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -36,7 +36,7 @@ Tokenizer on live listings: `"ECU0139V 0144V"`→`[ECU0139,ECU0144]`, `"MOD10131
 The order-reconcile/pick side: when a multi-serial listing sells ONE unit, eBay carries only the compound SKU, so you can't tell which physical serial shipped. That pick line should show ALL candidate serials and let **scan-verify (#21)** confirm which goes out. Separate, trickier deliverable. (`reconcileOrderLines` still matches the single `line.sku`.)
 
 ### Files
-public/index.html, server.js (comment), SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `<pending>`.
+public/index.html, server.js (comment), SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change. Commit `9307667`.
 
 ### Memory files
 HAWKER_SESSION.md + HAWKER_CHANGELOG.md updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
