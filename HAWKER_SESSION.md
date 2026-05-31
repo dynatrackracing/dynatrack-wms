@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: d6224b2 @ 2026-05-31 (Scan & Move Scanner|Manual toggle). Prior cutover (883458d) is LIVE on origin/main + applied to prod DB. Pushing this now per the brief.
-STAMP UPDATED BY: Claude Code, session 18:47 UTC 2026-05-31
+LAST PUSHED COMMIT: 496474e @ 2026-05-31 (intake_date backfill — docs only; the data write went directly to prod DB). Cutover + toggle are LIVE on origin/main. Pushing this now per the brief (Rule 4).
+STAMP UPDATED BY: Claude Code, session 20:34 UTC 2026-05-31
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -30,7 +30,7 @@ Live items **3,393**, all with `intake_date`, **0 NULL**; span **2026-02-06 .. 2
 Prefix histogram (live): MOD 1652 · INT 506 · ENG 448 · FUS 249 · ECU 182 · EXT 129 · RYN 106 · (none) 60 · CLU 51 · **PS 3 (2-letter!)** · E 2 · HTTPS 2 · M 1 · MFD 1 · EOD 1. → **Phase 2's "incomplete" rule must tolerate 2–4-letter prefixes (PS is 2; RYN is a real 3-letter), not assume exactly 3.** "Incomplete SKU" population (`serial !~ '^[A-Z]{2,4}[0-9]+$'`): **236 items** (the zero-padded numerics `000002…` + malformed `HTTPS…`/single-letter). That's what Phase 2 will pull out.
 
 ### Files
-SNAPSHOT_SCHEMA.md, HAWKER_RULES.md (rule 27), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. **Data-only prod change** (no app code). Rollback: Railway snapshot + `~/hawker-intake-backfill-rollback-*.json`. Commit `<pending>`.
+SNAPSHOT_SCHEMA.md, HAWKER_RULES.md (rule 27), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. **Data-only prod change** (no app code). Rollback: Railway snapshot + `~/hawker-intake-backfill-rollback-*.json`. Commit `496474e`.
 
 ### Memory files
 HAWKER_SESSION + HAWKER_CHANGELOG + HAWKER_RULES updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
