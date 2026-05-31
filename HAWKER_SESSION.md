@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: f71d43e @ 2026-05-31 (Inventory Health Phase 2 — Incomplete section + age bands). Cutover + backfill + toggle all LIVE on origin/main. Pushing this now per the brief (Rule 4).
-STAMP UPDATED BY: Claude Code, session 21:06 UTC 2026-05-31
+LAST PUSHED COMMIT: a59ed96 @ 2026-05-31 (reconcile ship-once guard, migration 0004 — applied to prod + backfilled). All prior work LIVE on origin/main. Pushing this now (Rule 4).
+STAMP UPDATED BY: Claude Code, session 23:14 UTC 2026-05-31
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -39,7 +39,7 @@ Dry-run (BEGIN…ROLLBACK) → 1,842 rows; candidates after backfill 0; the 5 no
 **69 items** currently `status='SHIPPED'` whose order shipped before the 2026-05-30 cutover = candidate unnoticed pre-cutover returns physically on a shelf (serial · last-known shelf · ship date · store). Ry reviews + scans the real ones back; with the ship-once fix they then STAY STORED. No status auto-reverted.
 
 ### Files
-db/migrations/0004-orderline-ship-move-applied.sql, server.js, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No frontend change. Commit `<pending>`.
+db/migrations/0004-orderline-ship-move-applied.sql, server.js, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No frontend change. Commit `a59ed96`.
 
 ### Deferred (not this session)
 A `RETURNED` disposition set at scan-back + a Returns view (visibility/audit). The ship-once guard fixes the bug without it.
