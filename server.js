@@ -970,17 +970,20 @@ async function reconcileOrderLines(orderList) {
   }
 
   // ── PHASE 2: ship-move (mirrors /api/move's audited txn) ──────────────────────
-  // Candidates = items still STORED that have at least one SHIPPED line matched to them
-  // (one row per item, so a serial driven by several shipped lines moves exactly once).
-  // Each move is its own BEGIN…COMMIT; the FOR UPDATE re-check of status='STORED' makes
-  // it idempotent — once an item is SHIPPED, later syncs select it no more (no dup moves).
+  // SHIP-ONCE PER LINE (2026-05-31, migration 0004): candidates = items still STORED with a matched
+  // SHIPPED line that has NOT yet had its ship-move applied (ship_move_applied_at IS NULL). The same
+  // txn that flips the item ALSO stamps the line, so a RETURNED item scanned back to STORED is NOT
+  // re-shipped on the next sync (its line stays SHIPPED in eBay's 90-day window, but is now applied).
+  // A genuine re-sale is a new OrderLineItemID → a fresh unstamped line → ships once. Each move is its
+  // own BEGIN…COMMIT; the FOR UPDATE re-check of status='STORED' keeps it idempotent within a sync.
   let moved = 0;
   const { rows: toMove } = await pool.query(
     `SELECT i.serial FROM items i
       WHERE i.status = 'STORED'
         AND i.archived_at IS NULL
         AND EXISTS (SELECT 1 FROM ebay_order_lines e
-                     WHERE e.matched_serial = i.serial AND e.disposition = 'SHIPPED')`
+                     WHERE e.matched_serial = i.serial AND e.disposition = 'SHIPPED'
+                       AND e.ship_move_applied_at IS NULL)`
   );
   if (toMove.length) {
     const mc = await pool.connect();
@@ -997,6 +1000,12 @@ async function reconcileOrderLines(orderList) {
           await mc.query(
             "INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, 'SHIPPED', 'ebay-sync')",
             [it.serial, cur.location || null]
+          );
+          // Ship-once stamp (migration 0004): mark the matched SHIPPED line(s) as applied IN THE SAME
+          // txn — atomic with the item flip. If this txn rolls back, the stamp is not set (re-tried next sync).
+          await mc.query(
+            "UPDATE ebay_order_lines SET ship_move_applied_at = NOW() WHERE matched_serial = $1 AND disposition = 'SHIPPED' AND ship_move_applied_at IS NULL",
+            [it.serial]
           );
           await mc.query('COMMIT');
           moved++;

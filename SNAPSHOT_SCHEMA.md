@@ -2,7 +2,7 @@
 
 > Orientation map of the database. Regenerate at session end if `db/schema.sql` or a `db/migrations/` file changed (HAWKER_RULES rule 38).
 > Generated 2026-05-29 from `db/schema.sql` **+ applied migrations in `db/migrations/`**. PostgreSQL (Railway).
-> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30).
+> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`** (2026-05-31).
 
 ## Tables
 
@@ -74,13 +74,14 @@ Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment
 | `first_seen` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | |
 | `last_synced` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | set by the sync each pass |
 | `ebay_last_modified` | TIMESTAMPTZ (nullable) | eBay's last-modified, for change detection |
+| `ship_move_applied_at` | TIMESTAMPTZ (nullable) | *migration 0004 (2026-05-31)* — **ship-once guard.** NULL = the reconcile Phase-2 ship-move has not yet been applied for this line. Set (in the same txn that flips the matched item → SHIPPED) the first time the line ships its item. Phase 2 only ships lines where this is NULL, so a **returned item scanned back to STORED is not re-shipped** (its line stays `disposition='SHIPPED'` in eBay's 90-day window but is now applied). Phase 1's ON CONFLICT never touches it. Backfilled to `COALESCE(ebay_shipped_time,last_synced,NOW())` on all 1,842 then-SHIPPED lines at deploy (so no existing ship re-clobbers). A genuine re-sale = a new OLI = a fresh NULL line → ships once. |
 
 ## Trigger
 - `touch_updated_at()` → `items_updated_at` BEFORE UPDATE on `items` keeps `updated_at` current.
 - No trigger on `ebay_order_lines` — `last_synced` is set explicitly by the sync.
 
 ## Indexes
-`items(serial)`, `items(status)`, `items(location)`, `items(intake_date)` *(migration 0002)*, **`items(archived_at) WHERE archived_at IS NOT NULL`** *(migration 0003 — partial; indexes only archived rows for the small Archived list)*, `moves(serial)`, `moves(moved_at DESC)`.
+`items(serial)`, `items(status)`, `items(location)`, `items(intake_date)` *(migration 0002)*, **`items(archived_at) WHERE archived_at IS NOT NULL`** *(migration 0003 — partial; indexes only archived rows for the small Archived list)*, `moves(serial)`, `moves(moved_at DESC)`. `ebay_order_lines`: see below + **`ebay_order_lines(matched_serial) WHERE disposition='SHIPPED' AND ship_move_applied_at IS NULL`** *(migration 0004 — partial; the Phase-2 ship-once candidate set, tiny after backfill)*.
 `ebay_order_lines`: PK on `order_line_item_id` + `(store)`, `(disposition)`, `(sku_norm)`, `(matched_serial)`, `(ebay_item_id)`.
 
 ## Seed sequences (⚠️ template only — NOT production)

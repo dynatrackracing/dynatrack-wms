@@ -11,6 +11,42 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-31
 
+## 23:14 UTC — Fix: reconcile re-ships returned items (Phase 2 ship-once guard, migration 0004)
+
+**Single deliverable:** stop `reconcileOrderLines` Phase 2 from re-shipping returned items. server.js + ONE additive migration. No frontend, no eBay writes (Rule 25), no new item status (Rule 11), no RETURNED disposition (deferred). Builds on last night's read-only diagnostic (ENG4911/ENG5036/ENG4987/ENG5004/ENG4367).
+
+### The bug
+Phase 2 ship-moved ANY item that is `STORED` with a matched `disposition='SHIPPED'` line. A returned item legitimately back on a shelf (STORED) re-shipped on **every** eBay sync, because its original order line stays SHIPPED inside eBay's ~90-day GetOrders window. (During this session a sync re-clobbered the 5 again — they were SHIPPED on arrival, plus a 6th, ENG4612, found STORED with an unstamped SHIPPED line.)
+
+### Step 0 diagnose (Rule 1)
+Re-read Phase 1 upsert + ON CONFLICT and Phase 2 (candidate `SELECT i.serial … WHERE status='STORED' AND archived_at IS NULL AND EXISTS(SHIPPED line)`; per-item `BEGIN`/`FOR UPDATE`/flip/move/`COMMIT`). Confirmed Phase 1's ON CONFLICT lists explicit columns → a new column is preserved on conflict automatically.
+
+### Migration 0004 (db/migrations/0004-orderline-ship-move-applied.sql, applied to prod)
+`ALTER TABLE ebay_order_lines ADD COLUMN IF NOT EXISTS ship_move_applied_at TIMESTAMPTZ` (nullable, null = ship-move not yet applied) + partial index `(matched_serial) WHERE disposition='SHIPPED' AND ship_move_applied_at IS NULL`. Additive/idempotent; schema.sql not edited (Rule 9).
+
+### server.js (reconcileOrderLines Phase 2)
+- Candidate guard: `AND e.ship_move_applied_at IS NULL` added to the EXISTS subquery (ship only unapplied SHIPPED lines; still STORED + archived_at IS NULL).
+- In the SAME ship-move txn (after the item flip + moves row): `UPDATE ebay_order_lines SET ship_move_applied_at=NOW() WHERE matched_serial=$1 AND disposition='SHIPPED' AND ship_move_applied_at IS NULL` — atomic (rolls back together).
+- Phase 1 ON CONFLICT unchanged → never clears a stamp. Net: a line ships its item once; a return to STORED is left alone; a genuine re-sale (new OLI, fresh NULL line) ships once.
+
+### One-time backfill (gated; dry-run → Ry go-ahead → committed)
+`UPDATE ebay_order_lines SET ship_move_applied_at=COALESCE(ebay_shipped_time,last_synced,NOW()) WHERE disposition='SHIPPED' AND ship_move_applied_at IS NULL` — **stamped 1,842 SHIPPED lines** so no existing ship re-clobbers. Gate decision: the single currently-STORED candidate **ENG4612** ship date 2026-04-15 = **PRE-cutover** → another return → full backfill correct (Ry's rule). Committed. Post: 0 unstamped SHIPPED lines, **0 Phase-2 candidates**, all 6 (5 + ENG4612) applied.
+
+### Verify (Rule 17)
+Dry-run (BEGIN…ROLLBACK) → 1,842 rows; candidates after backfill 0; the 5 not candidates; **simulated a genuine new ship** (`MOD20284` NEEDS_PICK→SHIPPED, unstamped) → becomes a candidate (ships once) ✓. `node --check` server.js OK. `/api/health` post-deploy below.
+
+### Step 4 review list (read-only, NOT mutated) — handed to Ry
+**69 items** currently `status='SHIPPED'` whose order shipped before the 2026-05-30 cutover = candidate unnoticed pre-cutover returns physically on a shelf (serial · last-known shelf · ship date · store). Ry reviews + scans the real ones back; with the ship-once fix they then STAY STORED. No status auto-reverted.
+
+### Files
+db/migrations/0004-orderline-ship-move-applied.sql, server.js, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No frontend change. Commit `<pending>`.
+
+### Deferred (not this session)
+A `RETURNED` disposition set at scan-back + a Returns view (visibility/audit). The ship-once guard fixes the bug without it.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 ## 21:06 UTC — Inventory Health WMS-Only cleanup: Incomplete-SKU section + age bands (Phase 2)
 
 **Single deliverable, frontend only** (public/index.html — `loadInventoryHealth`/`renderHealthTable`/`exportHealthCSV` + helpers). Builds on Phase 1's `intake_date` backfill. **Only the WMS-Only bucket changed** — Matched/eBay-Only/Duplicate/Cross-listed/Staging untouched (Rules A/B/2). No eBay writes (Rule 25), no theme change (Rule 21). REUSED the top-level `normalizeSkuKey`.
