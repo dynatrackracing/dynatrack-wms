@@ -11,6 +11,31 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-31
 
+## 21:06 UTC — Inventory Health WMS-Only cleanup: Incomplete-SKU section + age bands (Phase 2)
+
+**Single deliverable, frontend only** (public/index.html — `loadInventoryHealth`/`renderHealthTable`/`exportHealthCSV` + helpers). Builds on Phase 1's `intake_date` backfill. **Only the WMS-Only bucket changed** — Matched/eBay-Only/Duplicate/Cross-listed/Staging untouched (Rules A/B/2). No eBay writes (Rule 25), no theme change (Rule 21). REUSED the top-level `normalizeSkuKey`.
+
+### Step 0 diagnose (Rule 1)
+- `GET /api/items` is `SELECT * FROM items` → `intake_date` already in every row. **No server change** (the only possible server touch — avoided).
+- **Refined incomplete detection.** The earlier audit's `^[A-Z]{2,4}[0-9]+$` (case-sensitive, raw) over-flagged 236 by rejecting valid suffixed serials (`INT4306R` ends in a letter). Canonical rule: `!/^[A-Z]{2,4}\d+$/.test(normalizeSkuKey(serial))` (normalizer strips the trailing letter). **Refined count = 179** (down from 236): **57** were valid suffixed serials now correctly KEPT (`ENG4113V`→`ENG4036V`…). Remaining 179 = 60 numeric-only (`000002…`), 116 hyphenated (`MOD-20359…`), 2 URL pastes, 1 single-letter prefix.
+
+### Built (Steps 1–3)
+- **Step 1 — Incomplete SKUs:** in the client reconcile, an unlisted item failing the rule (`isIncompleteKey`) → new **`Incomplete`** status (pulled OUT of WMS Only). Added a 9th stat card `#h-incomplete`, an Incomplete filter tab, and it renders in the existing table (Serial · raw form · location). WMS-Only count/table now EXCLUDE these.
+- **Step 2 — age bands** on the remaining valid WMS-Only items: `ageDaysFromIntake` (date-only, TZ-safe, same-day/future=0) + `ageBand` (half-open: **New 0–13 green / Aging 14–20 yellow / Overdue 21+ red / Unknown gray**). When the WMS-Only tab is active, rows render **grouped by band** (Overdue→Aging→New→Unknown, colored section headers + counts, New visually set apart as "fine, give it time"). New **age-band chips** (`#health-band-tabs`: All/Overdue/Aging/New → `filterHealthBand`, auto-switches to the WMS-Only tab). One-line red·yellow·green breakdown under the WMS-Only card (`#h-wms-bands`). `healthRowHtml` factored out of `renderHealthTable`; WMS-Only rows show a band-colored `Nd` age.
+- **Step 3 — export:** `exportHealthCSV` gains `WMS Intake Date, Age Days, Age Band, Incomplete` columns (single header button kept).
+
+### Verify (Rule 17)
+`node --check` inline JS OK; **div balance 341/341; 11 `.page` divs all depth-0 siblings, `page-health` at depth 0** (the once-swallowed page — not regressed); 9 stat cards. Refined incomplete = **179** (deterministic, confirmed vs the live items). Age-band thresholds verified in SQL (Overdue 2,537 / Aging 163 / New 693 / Unknown 0 = 3,393, sum ✓) with spot-checks: Feb-06 item (`001839`, age 114) → **Overdue/red**, today's item (`MOD12549`, age 0) → **New/green**. The exact on-page WMS-Only/Incomplete/band counts are the **live browser reconcile** (needs `ALL_LISTINGS` from a sync) → **Ry's tablet pass:** Inventory Health → Sync listings → confirm the Incomplete section lists the numerics/junk, the green/yellow/red bands render + chips filter, CSV has the new columns. `/api/health` 200 (post-deploy).
+
+### Observation (NOT this session, Rule B)
+~57 items store **suffixed serials** (`INT4306R`) in `items.serial`, contrary to the bare-serial convention (Rule 8). This change tolerates them as valid (correct), so not blocking — a later dedicated normalize-to-bare pass may be worth it. Flagging, not fixing.
+
+### Files
+public/index.html, SNAPSHOT_FRONTEND.md (no SNAPSHOT_ROUTES — `/api/items` unchanged), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No server/schema change. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 ## 20:34 UTC — Backfill items.intake_date from the extract's createdAt (REVERSES the cutover's "age forward only")
 
 **⚠️ DELIBERATE REVERSAL — do not flag as contradicting the 18:11 cutover note.** The cutover left `intake_date` NULL ("age forward only") because the old WMS rewrites scan dates on re-consolidation (last-touched, not true first-intake). **Ry decided 2026-05-31 to backfill anyway:** for an unlisted-aging view, a real date beats NULL, and the caveat is accepted. Data UPDATE only — `intake_date` exists (migration 0002), so no schema/migration. No `moves` rows (Rule 13 is for location/status, not a date correction). Keyed on `serial` (immutable, Rule 30). eBay untouched (Rule 25).

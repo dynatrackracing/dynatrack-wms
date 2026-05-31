@@ -526,7 +526,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     </div>
     <div class="card" style="border-left:3px solid var(--warn)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div class="sl">WMS Only</div><div class="sv" style="color:var(--warn)" id="h-wms-only">–</div></div>
+        <div><div class="sl">WMS Only</div><div class="sv" style="color:var(--warn)" id="h-wms-only">–</div><div id="h-wms-bands" style="font-size:10px;margin-top:3px;color:var(--muted)"></div></div>
         <div style="font-size:22px">⚠</div>
       </div>
     </div>
@@ -546,6 +546,12 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div><div class="sl">Staging</div><div class="sv" style="color:var(--brand)" id="h-staging">–</div></div>
         <div style="font-size:22px">📦</div>
+      </div>
+    </div>
+    <div class="card" style="border-left:3px solid var(--warn)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div><div class="sl">Incomplete SKUs</div><div class="sv" style="color:var(--warn)" id="h-incomplete">–</div></div>
+        <div style="font-size:22px">✎</div>
       </div>
     </div>
   </div>
@@ -569,8 +575,16 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterHealthStatus('Matched',this)">Matched</button>
     <button class="tab" onclick="filterHealthStatus('eBay Only',this)">eBay Only</button>
     <button class="tab" onclick="filterHealthStatus('WMS Only',this)">WMS Only</button>
+    <button class="tab" onclick="filterHealthStatus('Incomplete',this)">Incomplete</button>
     <button class="tab" onclick="filterHealthStatus('Duplicate',this)">Duplicate</button>
     <button class="tab" onclick="filterHealthStatus('Cross-listed',this)">Cross-listed</button>
+  </div>
+  <div class="tabs" id="health-band-tabs" style="margin-top:-8px">
+    <span style="font-size:11px;color:var(--muted);align-self:center;margin-right:2px">WMS-Only age:</span>
+    <button class="tab active" onclick="filterHealthBand('all',this)">All</button>
+    <button class="tab" onclick="filterHealthBand('Overdue',this)">Overdue</button>
+    <button class="tab" onclick="filterHealthBand('Aging',this)">Aging</button>
+    <button class="tab" onclick="filterHealthBand('New',this)">New</button>
   </div>
 
   <div class="card" style="padding:0">
@@ -1807,6 +1821,7 @@ var healthData       = [];
 var healthFilter     = '';
 var healthStatusFilter = 'all';
 var healthStoreFilter  = 'all';
+var healthBandFilter   = 'all';   // age-band chip — only affects the WMS-Only bucket
 
 // ── SKU ↔ WMS-serial matching (Rule 8) — CANONICAL frontend copy ─────────────────
 // normalizeSkuKey MUST stay byte-identical to the server.js copy (used by reconcileOrderLines).
@@ -1845,6 +1860,31 @@ function listedSerialKeys(field) {
   }
   return keys;
 }
+
+// ── Inventory Health WMS-Only cleanup helpers (2026-05-31) ────────────────────────
+// An unlisted item is INCOMPLETE when its NORMALIZED serial isn't a clean 2–4-letter prefix +
+// digits (numeric-only 000002, hyphenated MOD-20359, URL/junk). normalizeSkuKey already strips a
+// trailing letter, so a valid suffixed serial (INT4306R → INT4306) passes and is NOT flagged.
+var VALID_SERIAL = /^[A-Z]{2,4}\d+$/;
+function isIncompleteKey(key) { return !VALID_SERIAL.test(key || ''); }
+// Whole days from intake_date to today (date-only, TZ-safe; same-day or future = 0; NULL → null).
+function ageDaysFromIntake(intakeRaw) {
+  if (!intakeRaw) return null;
+  var p = String(intakeRaw).slice(0, 10).split('-');     // 'YYYY-MM-DD' — ignore time/zone
+  if (p.length !== 3) return null;
+  var intakeUTC = Date.UTC(+p[0], +p[1] - 1, +p[2]);
+  var n = new Date(), todayUTC = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
+  var d = Math.floor((todayUTC - intakeUTC) / 86400000);
+  return d < 0 ? 0 : d;
+}
+// Half-open bands: day 14 = Aging, day 21 = Overdue. NULL intake → 'Unknown'.
+function ageBand(age) {
+  if (age == null) return 'Unknown';
+  if (age >= 21) return 'Overdue';
+  if (age >= 14) return 'Aging';
+  return 'New';
+}
+var BAND_COLOR = { Overdue: 'var(--err)', Aging: 'var(--warn)', New: 'var(--success)', Unknown: 'var(--muted)' };
 
 async function loadInventoryHealth() {
   // DIAGNOSTIC — remove after blank-page bug confirmed resolved (counts/shapes only, no PII)
@@ -1921,30 +1961,48 @@ async function loadInventoryHealth() {
       else if (ebay && wmsArr.length > 1)   status = 'Duplicate';
       else if (ebay && wmsArr.length === 1) status = 'Matched';
       else if (ebay && wmsArr.length === 0) status = 'eBay Only';
+      else if (isIncompleteKey(key))        status = 'Incomplete';   // unlisted + malformed serial → out of WMS Only
       else                                  status = 'WMS Only';
 
-      rows.push({ key, status, ebay, stores, ebayByStore: rec ? rec.stores : {}, wms: wmsArr });
+      // Age band for valid-format WMS-Only items only (oldest intake among the row's items = most aged).
+      var ageDays = null, band = null;
+      if (status === 'WMS Only') {
+        wmsArr.forEach(function(i){ var a = ageDaysFromIntake(i.intake_date); if (a != null && (ageDays == null || a > ageDays)) ageDays = a; });
+        band = ageBand(ageDays);
+      }
+      rows.push({ key: key, status: status, ebay: ebay, stores: stores, ebayByStore: rec ? rec.stores : {}, wms: wmsArr, ageDays: ageDays, band: band });
     });
 
     rows.sort(function(a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });  // default sort: SKU ascending
     healthData = rows;
 
     // ── Stats ──────────────────────────────────────────
-    var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0, 'Cross-listed':0 };
-    rows.forEach(function(r) { counts[r.status] = (counts[r.status]||0) + 1; });
+    var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0, 'Cross-listed':0, Incomplete:0 };
+    var bands  = { Overdue:0, Aging:0, New:0, Unknown:0 };
+    rows.forEach(function(r) {
+      counts[r.status] = (counts[r.status]||0) + 1;
+      if (r.status === 'WMS Only') bands[r.band] = (bands[r.band]||0) + 1;
+    });
 
-    document.getElementById('h-matched').textContent   = (counts['Matched']   ||0).toLocaleString();
-    document.getElementById('h-ebay-only').textContent = (counts['eBay Only'] ||0).toLocaleString();
-    document.getElementById('h-wms-only').textContent  = (counts['WMS Only']  ||0).toLocaleString();
-    document.getElementById('h-duplicate').textContent = (counts['Duplicate'] ||0).toLocaleString();
-    document.getElementById('h-cross').textContent     = (counts['Cross-listed'] ||0).toLocaleString();
-    document.getElementById('h-staging').textContent   = stagedItems.length.toLocaleString();
-    document.getElementById('h-wms-items').textContent = storedItems.length.toLocaleString();
+    document.getElementById('h-matched').textContent    = (counts['Matched']   ||0).toLocaleString();
+    document.getElementById('h-ebay-only').textContent  = (counts['eBay Only'] ||0).toLocaleString();
+    document.getElementById('h-wms-only').textContent   = (counts['WMS Only']  ||0).toLocaleString();
+    document.getElementById('h-duplicate').textContent  = (counts['Duplicate'] ||0).toLocaleString();
+    document.getElementById('h-cross').textContent      = (counts['Cross-listed'] ||0).toLocaleString();
+    document.getElementById('h-incomplete').textContent = (counts['Incomplete'] ||0).toLocaleString();
+    document.getElementById('h-staging').textContent    = stagedItems.length.toLocaleString();
+    document.getElementById('h-wms-items').textContent  = storedItems.length.toLocaleString();
     document.getElementById('h-ebay-total').textContent = liveListings.length.toLocaleString();  // live (available>0) only
+    // one-line age breakdown under the WMS-Only stat card (red · yellow · green · gray-if-any)
+    document.getElementById('h-wms-bands').innerHTML =
+      '<span style="color:var(--err)">' + bands.Overdue + ' overdue</span> · ' +
+      '<span style="color:var(--warn)">' + bands.Aging + ' aging</span> · ' +
+      '<span style="color:var(--success)">' + bands.New + ' new</span>' +
+      (bands.Unknown ? ' · <span style="color:var(--muted)">' + bands.Unknown + ' unknown</span>' : '');
 
     // Update tab labels (order MUST match the #health-tabs DOM order, incl. Cross-listed)
     var tabs = document.querySelectorAll('#health-tabs .tab');
-    var labels = ['All ('+rows.length+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+(counts['WMS Only']||0)+')', 'Duplicate ('+counts['Duplicate']+')', 'Cross-listed ('+counts['Cross-listed']+')'];
+    var labels = ['All ('+rows.length+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+(counts['WMS Only']||0)+')', 'Incomplete ('+(counts['Incomplete']||0)+')', 'Duplicate ('+counts['Duplicate']+')', 'Cross-listed ('+counts['Cross-listed']+')'];
     tabs.forEach(function(t,i){ if(labels[i]) t.textContent = labels[i]; });
 
     var now = new Date().toLocaleString('en-AU');
@@ -1975,17 +2033,8 @@ async function loadInventoryHealth() {
 function renderHealthTable() {
   var data = healthData;
 
-  // Filter by status
-  if (healthStatusFilter !== 'all') {
-    data = data.filter(function(r) { return r.status === healthStatusFilter; });
-  }
-
-  // Filter by store — keep rows whose eBay listing(s) involve the selected store
-  if (healthStoreFilter !== 'all') {
-    data = data.filter(function(r) { return (r.stores || []).indexOf(healthStoreFilter) >= 0; });
-  }
-
-  // Filter by search
+  if (healthStatusFilter !== 'all') data = data.filter(function(r){ return r.status === healthStatusFilter; });
+  if (healthStoreFilter !== 'all')  data = data.filter(function(r){ return (r.stores || []).indexOf(healthStoreFilter) >= 0; });
   if (healthFilter) {
     var q = healthFilter.toLowerCase();
     data = data.filter(function(r) {
@@ -1995,77 +2044,87 @@ function renderHealthTable() {
     });
   }
 
-  var show = data.slice(0, 500);
-  var tb   = document.getElementById('health-table');
+  var tb = document.getElementById('health-table');
+  var showingEl = document.getElementById('health-showing');
 
-  if (!show.length) {
-    tb.innerHTML = '<tr><td colspan="4" class="loading">No results</td></tr>';
-    document.getElementById('health-showing').textContent = '';
+  // ── WMS-Only view → grouped by age band, Overdue → Aging → New → Unknown (action priority) ──
+  if (healthStatusFilter === 'WMS Only') {
+    if (healthBandFilter !== 'all') data = data.filter(function(r){ return r.band === healthBandFilter; });
+    var ORDER = [
+      ['Overdue', 'list or decommission — sitting 21+ days'],
+      ['Aging',   '14–20 days — coming due'],
+      ['New',     'within the 2–3 week listing window — fine, give it time'],
+      ['Unknown', 'no intake date'],
+    ];
+    var html = '', used = 0, CAP = 600;
+    ORDER.forEach(function(o) {
+      var grp = data.filter(function(r){ return r.band === o[0]; });
+      if (!grp.length || used >= CAP) return;
+      var col = BAND_COLOR[o[0]], faint = o[0] === 'New' ? ';opacity:.8' : '';
+      html += '<tr><td colspan="4" style="background:var(--bg3);border-left:4px solid ' + col + ';padding:9px 14px;font-weight:700;color:' + col + faint + '">'
+        + o[0] + ' <span style="color:var(--muted);font-weight:600">(' + grp.length + ')</span>'
+        + ' <span style="font-size:11px;color:var(--muted);font-weight:400">— ' + o[1] + '</span></td></tr>';
+      var take = grp.slice(0, CAP - used);
+      html += take.map(healthRowHtml).join('');
+      used += take.length;
+    });
+    tb.innerHTML = html || '<tr><td colspan="4" class="loading">No WMS-Only items in this band</td></tr>';
+    showingEl.textContent = data.length.toLocaleString() + ' rows' + (used < data.length ? ' (showing first ' + used + ')' : '');
     return;
   }
 
-  tb.innerHTML = show.map(function(r) {
-    // Status badge
-    var badgeCls = r.status === 'Matched'      ? 'bg-s' :
-                   r.status === 'Duplicate'    ? 'bg-e' :
-                   r.status === 'Cross-listed' ? 'bg-e' :
-                   r.status === 'eBay Only'    ? 'bg-w' : 'bg-w';
-    var badge = '<span class="badge ' + badgeCls + '">' + r.status + '</span>';
+  // ── All other views → flat list ──
+  var show = data.slice(0, 500);
+  if (!show.length) { tb.innerHTML = '<tr><td colspan="4" class="loading">No results</td></tr>'; showingEl.textContent = ''; return; }
+  tb.innerHTML = show.map(healthRowHtml).join('');
+  showingEl.textContent = data.length.toLocaleString() + ' rows' + (data.length > 500 ? ' (showing first 500)' : '');
+}
 
-    // eBay column — one block per listing, store badge inline. Cross-listed shows BOTH stores stacked
-    // so the oversell risk (same SKU live on two stores) is visually obvious.
-    function listingBlock(l) {
-      if (!l) return '';
-      var fullTitle = (l.title || '').replace(/"/g, '&quot;');
-      var shortTitle = (l.title || '').substring(0, 55) + ((l.title || '').length > 55 ? '…' : '');
-      var urlPart = l.url && l.url !== '#'
-        ? ' · <a href="' + l.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View on eBay ↗</a>'
-        : '';
-      return '<div style="margin-bottom:6px">'
-        + storeBadge(l.store) + ' '
-        + '<span class="mono" style="color:var(--brand)">' + (l.sku || '–') + '</span>'
-        + ' · qty ' + l.qty
-        + ' · <span style="color:var(--success);font-weight:600">$' + l.price + '</span>'
-        + urlPart
-        + '<br><span style="font-size:12px;color:var(--text2)" title="' + fullTitle + '">' + shortTitle + '</span>'
-        + '</div>';
-    }
-    var ebayCol;
-    if (r.status === 'Cross-listed' && r.ebayByStore) {
-      ebayCol = Object.keys(r.ebayByStore).sort().map(function(k){ return listingBlock(r.ebayByStore[k]); }).join('');
-    } else if (r.ebay) {
-      ebayCol = listingBlock(r.ebay);
-    } else {
-      ebayCol = '<span style="color:var(--muted)">—</span>';
-    }
+// One Inventory Health table row (SKU · Status · eBay · WMS). WMS-Only rows show a band-colored age.
+function healthRowHtml(r) {
+  var badgeCls = r.status === 'Matched'      ? 'bg-s' :
+                 r.status === 'Duplicate'    ? 'bg-e' :
+                 r.status === 'Cross-listed' ? 'bg-e' : 'bg-w';   // eBay Only / WMS Only / Incomplete → warn
+  var badge = '<span class="badge ' + badgeCls + '">' + r.status + '</span>';
+  if (r.status === 'WMS Only' && r.ageDays != null) {
+    badge += ' <span style="font-size:10px;font-weight:700;color:' + BAND_COLOR[r.band] + '">' + r.ageDays + 'd</span>';
+  }
 
-    // WMS column — plain serial (HawkerWMS has no item-detail page, so NOT a link; never link to
-    // the old paid WMS). All items stacked for Duplicate. Raw serial shown in parens if it differs
-    // from the normalized SKU key. Warehouse location in small muted text below.
-    var wmsCol = r.wms.length
-      ? r.wms.map(function(i) {
-          var rawUpper = (i.serial || '').toUpperCase();
-          var differs  = rawUpper !== r.key;
-          var mainSerial = differs ? r.key : i.serial;
-          var rawParen   = differs ? ' <span style="color:var(--muted);font-size:11px">(' + i.serial + ')</span>' : '';
-          return '<div style="margin-bottom:6px">'
-            + '<span class="mono" style="color:var(--text);font-weight:600">' + mainSerial + '</span>' + rawParen
-            + (i.location ? '<br><span class="mono" style="font-size:11px;color:var(--muted)">' + i.location + '</span>' : '')
-            + '</div>';
-        }).join('')
-      : '<span style="color:var(--muted)">—</span>';
+  function listingBlock(l) {
+    if (!l) return '';
+    var fullTitle = (l.title || '').replace(/"/g, '&quot;');
+    var shortTitle = (l.title || '').substring(0, 55) + ((l.title || '').length > 55 ? '…' : '');
+    var urlPart = l.url && l.url !== '#'
+      ? ' · <a href="' + l.url + '" target="_blank" style="color:var(--brand);font-size:11px;text-decoration:none">View on eBay ↗</a>' : '';
+    return '<div style="margin-bottom:6px">' + storeBadge(l.store) + ' '
+      + '<span class="mono" style="color:var(--brand)">' + (l.sku || '–') + '</span>'
+      + ' · qty ' + l.qty + ' · <span style="color:var(--success);font-weight:600">$' + l.price + '</span>' + urlPart
+      + '<br><span style="font-size:12px;color:var(--text2)" title="' + fullTitle + '">' + shortTitle + '</span></div>';
+  }
+  var ebayCol;
+  if (r.status === 'Cross-listed' && r.ebayByStore) ebayCol = Object.keys(r.ebayByStore).sort().map(function(k){ return listingBlock(r.ebayByStore[k]); }).join('');
+  else if (r.ebay) ebayCol = listingBlock(r.ebay);
+  else ebayCol = '<span style="color:var(--muted)">—</span>';
 
-    return '<tr>'
-      + '<td class="mono" style="color:var(--text);font-weight:600">' + r.key + '</td>'
-      + '<td>' + badge + '</td>'
-      + '<td style="line-height:1.6">' + ebayCol + '</td>'
-      + '<td style="line-height:1.6">' + wmsCol + '</td>'
-      + '</tr>';
-  }).join('');
+  var wmsCol = r.wms.length
+    ? r.wms.map(function(i) {
+        var rawUpper = (i.serial || '').toUpperCase();
+        var differs  = rawUpper !== r.key;
+        var mainSerial = differs ? r.key : i.serial;
+        var rawParen   = differs ? ' <span style="color:var(--muted);font-size:11px">(' + i.serial + ')</span>' : '';
+        return '<div style="margin-bottom:6px">'
+          + '<span class="mono" style="color:var(--text);font-weight:600">' + mainSerial + '</span>' + rawParen
+          + (i.location ? '<br><span class="mono" style="font-size:11px;color:var(--muted)">' + i.location + '</span>' : '')
+          + '</div>';
+      }).join('')
+    : '<span style="color:var(--muted)">—</span>';
 
-  var suffix = data.length > 500 ? ' (showing first 500)' : '';
-  document.getElementById('health-showing').textContent =
-    data.length.toLocaleString() + ' rows' + suffix;
+  return '<tr>'
+    + '<td class="mono" style="color:var(--text);font-weight:600">' + r.key + '</td>'
+    + '<td>' + badge + '</td>'
+    + '<td style="line-height:1.6">' + ebayCol + '</td>'
+    + '<td style="line-height:1.6">' + wmsCol + '</td>'
+    + '</tr>';
 }
 
 function filterHealth(v) { healthFilter = v; renderHealthTable(); }
@@ -2075,6 +2134,21 @@ function filterHealthStatus(s, btn) {
   document.querySelectorAll('#health-tabs .tab').forEach(function(t){ t.classList.remove('active'); });
   btn.classList.add('active');
   healthStatusFilter = s;
+  if (s !== 'WMS Only') {   // age-band chips only apply to WMS Only — reset them when leaving
+    healthBandFilter = 'all';
+    var bt = document.querySelectorAll('#health-band-tabs .tab');
+    bt.forEach(function(t){ t.classList.remove('active'); });
+    if (bt[0]) bt[0].classList.add('active');
+  }
+  renderHealthTable();
+}
+// Age-band chips are a WMS-Only control: clicking one switches to the WMS Only tab + filters the band.
+function filterHealthBand(b, btn) {
+  document.querySelectorAll('#health-band-tabs .tab').forEach(function(t){ t.classList.remove('active'); });
+  btn.classList.add('active');
+  healthBandFilter = b;
+  healthStatusFilter = 'WMS Only';
+  document.querySelectorAll('#health-tabs .tab').forEach(function(t){ t.classList.toggle('active', /^WMS Only/.test(t.textContent)); });
   renderHealthTable();
 }
 
@@ -2083,10 +2157,11 @@ function exportHealthCSV() {
   var rows = healthData;
   if (healthStatusFilter !== 'all') rows = rows.filter(function(r){ return r.status === healthStatusFilter; });
   if (healthStoreFilter !== 'all') rows = rows.filter(function(r){ return (r.stores||[]).indexOf(healthStoreFilter) >= 0; });
-  var csv = 'SKU,Status,Stores,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location\n';
+  var csv = 'SKU,Status,Stores,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location,WMS Intake Date,Age Days,Age Band,Incomplete\n';
   rows.forEach(function(r) {
     var wmsSerial = r.wms.map(function(i){ return i.serial; }).join(';');
     var wmsLoc    = r.wms.map(function(i){ return i.location||''; }).join(';');
+    var wmsIntake = r.wms.map(function(i){ return (i.intake_date||'').slice(0,10); }).join(';');
     csv += [
       r.key,
       r.status,
@@ -2096,6 +2171,10 @@ function exportHealthCSV() {
       r.ebay ? r.ebay.qty   : '',
       wmsSerial,
       wmsLoc,
+      wmsIntake,
+      (r.status === 'WMS Only' && r.ageDays != null) ? r.ageDays : '',
+      r.status === 'WMS Only' ? (r.band || '') : '',
+      r.status === 'Incomplete' ? 'yes' : '',
     ].join(',') + '\n';
   });
   var a = document.createElement('a');
