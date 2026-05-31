@@ -11,6 +11,40 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-05-31
 
+## 18:11 UTC — 🚀 CUTOVER: live-inventory baseline reload (shipped dropped; HawkerWMS is now the system of record)
+
+**THE CUTOVER.** Clean-reloaded prod from the old-WMS final extract as a **live-inventory-only** baseline. Shipped items dropped (eBay + ShippingEasy own shipped going forward). Followed the architect brief's gated sequence; nothing destructive ran before the human Railway snapshot + an explicit commit go-ahead.
+
+### Decisions (architect, final)
+- **Live only:** import items where `currentLocation.locationType !== 'SHIPPED'` (3,390 of 5,161); drop the 1,771 shipped. **All imported → STORED** (remaps 6 stray STAGED_UNLISTED).
+- **`intake_date` = NULL for all** — old WMS rewrites scan dates on re-consolidations, so they aren't true intake; age forward only.
+- **Source:** `wms-final-extract-2026-05-30 (6).json` (Fri-evening; freshest activity 2026-05-29 16:39 UTC, 0 weekend drift).
+
+### Diagnose-first (Rule 1) — caught a real bug in the script
+Read `scripts/import-baseline.mjs` + schema + migrations + the actual extract. **The script's item field names (`it._locationType`/`_locationName`) DO NOT EXIST in this extract** — it uses `currentLocation.{locationType,name}`; running as-is would have nulled every location. Validated the extract against every target before editing (549 loc = 526 SHELF_BIN+21 UNLISTED_TOTE+2 SHIPPED; 5,161 items = 3,390 SHELF_BIN + 1,771 SHIPPED; non-shipped status 3,384 STORED + 6 STAGED; 0 null-loc / 0 garbage / 0 null-sku among non-shipped).
+
+### Changes to scripts/import-baseline.mjs
+Item filter (drop SHIPPED locationType) · force `status='STORED'` · use `currentLocation.{name,locationType}` · locations: import 547 non-SHIPPED + seed ONE empty canonical `SHIPPED` (skip historical `SHIPPED`/`SHIPPED-1`) · `intake_date` left NULL · **TRUNCATE `ebay_order_lines`** in the txn (stale `matched_serial` pointers; rebuilds on next sync) · SHIPPED-collapse removed; garbage/null-loc kept as 0-assertions · extract path → the `(6)` file · `SAFE_MOVED_BY` += `ebay-sync/intake/archive/unarchive` · added end-state checks (items-in-SHIPPED, ebay_order_lines, intake_date, archived all =0). Kept the idempotent single-txn FK-safe clean reload. `npm install` was needed first (pg not installed on this machine; gitignored per-machine).
+
+### Safe sequence executed
+1. Read-only **abort-guard** (movers: import-baseline 5061 / ebay-sync 114 / intake 38 / dynatrack 31 — all safe; no real warehouse scans). 2. **HUMAN took the Railway Postgres snapshot** (confirmed). 3. **Dry-run** (BEGIN…ROLLBACK) reconciled to EVERY target to the row; wrote pre-export `~/hawker-preexport-2026-05-31T18-03-32Z.json`. 4. **Explicit commit go-ahead** → ran `--commit` (pre-export `…T18-08-54Z.json`).
+
+### Post-import verify (Rule 27, FRESH connection) — ALL PASS
+**548 locations** (526 SHELF_BIN + 21 UNLISTED_TOTE + 1 SHIPPED) · **3,390 items** all STORED · **0 in SHIPPED location** · **3,390 moves** all `import-baseline` · **0 FK orphans** · intake_date set 0 · archived 0 · **ebay_order_lines 0** (repopulates on first sync) · sequences 12 (vestigial). `/api/health` 200.
+
+### Expected benign side effect (documented in the brief)
+First post-cutover eBay sync: orders shipped *before* cutover reference dropped serials → reconcile to `location_unknown`; the age-aware pick list routes anything >3 business days to the **Errors tab, not the active sheet**, so day-one picking stays clean and they age out as eBay's window rolls forward. Not a bug.
+
+### Human-only follow-ups (NOT done by Claude Code)
+- Repoint the warehouse tablet to `hawkerwms.up.railway.app` and **stop using the old WMS** before Monday's first scan.
+- Old-WMS subscription cancellation — later, Ry's call (keep as fallback a few days).
+
+### Files
+scripts/import-baseline.mjs, SNAPSHOT_SCHEMA.md (+ HAWKER_RULES rule 27 data-counts) updated to the post-cutover baseline, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/migration change. Rollback artifacts: the Railway snapshot + two `~/hawker-preexport-*.json` dumps. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG + HAWKER_RULES updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
+
 ## 16:58 UTC — Multi-serial SKU tokenizer: listings packing several serials now match every part
 
 **Single deliverable:** make the listed-SKU matcher recognize listings whose eBay "Custom label (SKU)" field packs MULTIPLE WMS serials, so those parts stop reading as falsely unlisted. eBay READ-ONLY (Rule 25); frontend matching logic; no schema change. **SCOPE: LISTED/UNLISTED matching only** (the order-reconcile/pick side is PARKED — see end).

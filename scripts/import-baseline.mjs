@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /*
- * import-baseline.mjs — ONE-OFF baseline import for HawkerWMS.
- * Clean reload of the old-WMS extract (wms-full-backup.json) as the new baseline (Option B).
- * NOT wired into the app runtime. Reused at the real cutover.
+ * import-baseline.mjs — baseline/cutover import for HawkerWMS.
+ * Clean reload (Option B) of the old-WMS final extract as the new baseline. Reused at cutover.
+ * NOT wired into the app runtime.
  *
  * Run via:  railway run --service Postgres node scripts/import-baseline.mjs            (DRY-RUN: BEGIN…compute…ROLLBACK)
  *           railway run --service Postgres node scripts/import-baseline.mjs --commit   (PERSISTENT WRITE — requires this flag)
@@ -13,15 +13,26 @@
  *           --skip-export             skip the read-only pre-export dump
  * Env:      DATABASE_URL (injected by `railway run`), EXTRACT_PATH (optional override)
  *
- * Locked decisions baked in:
- *  1. Clean reload, locations + items only (skip auth/ebayOrders/ebayListings/byLocation/reconciliation/stats).
- *  2. Collapse SHIPPED + SHIPPED-1 → ONE 'SHIPPED' location; those items → status SHIPPED, location 'SHIPPED'.
- *     All other items → status STORED (STAGED_UNLISTED dropped entirely).
- *  3. locationType → locations.type as-is (SHELF_BIN / UNLISTED_TOTE / SHIPPED). No schema change.
- *  4. Moves baseline: ONE synthetic move per item — from_location NULL, to_location=<location>,
- *     moved_by='import-baseline', moved_at=createdAt (preserve first-seen). Appends, not edits (Rule 13).
- *  5. Sequences: next_num per prefix = max imported serial# + 1, excluding the garbage outlier.
- *  6. Garbage serial (>=20 digits): imported but FLAGGED, and excluded from the sequence calc.
+ * Locked decisions baked in (CUTOVER 2026-05-31 — live-inventory-only):
+ *  1. Clean reload, locations + items + moves only; TRUNCATE ebay_order_lines (stale matched_serial
+ *     pointers would dangle against dropped serials — it rebuilds on the next eBay sync).
+ *  2. LIVE INVENTORY ONLY: import only items whose currentLocation.locationType !== 'SHIPPED'
+ *     (3,390 of 5,161). Every shipped item is DROPPED — eBay + ShippingEasy are the source of truth
+ *     for shipped going forward. Every imported item → status 'STORED' (remaps the 6 stray
+ *     STAGED_UNLISTED; v1 live model is STORED-only).
+ *  3. Locations: import the 547 non-SHIPPED locations (locationType → type, SHELF_BIN / UNLISTED_TOTE).
+ *     Do NOT import the two historical SHIPPED locations ('SHIPPED','SHIPPED-1'); instead seed exactly
+ *     ONE empty canonical 'SHIPPED' location (type SHIPPED) as the destination for forward ship-moves.
+ *  4. intake_date: left NULL for every imported item — the old WMS rewrites scan dates on
+ *     re-consolidations, so they aren't true intake. Age forward only (HawkerWMS stamps intake_date
+ *     once at intake, never on moves). The items INSERT omits intake_date (NULL default, migration 0002).
+ *  5. Moves baseline: ONE synthetic move per item — from_location NULL, to_location=<location>,
+ *     moved_by='import-baseline', moved_at=createdAt. Appends, not edits (Rule 13).
+ *  6. Sequences: next_num per prefix = max imported (live) serial# + 1.
+ *  7. Dead branches neutralized: SHIPPED-collapse removed (nothing shipped is imported); garbage-serial
+ *     and null-location flagging are kept as 0-assertions only (the live set has zero garbage/null-loc).
+ * Extract field shape (wms-final-extract): items[].{serialId,status,notes,createdAt,updatedAt,
+ *   currentLocation:{name,locationType}} ; locations[].{name,locationType,createdAt}.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -32,12 +43,12 @@ const { Pool } = pkg;
 const COMMIT = process.argv.includes('--commit');
 const OVERRIDE_GUARD = process.argv.includes('--override-abort-guard');
 const SKIP_EXPORT = process.argv.includes('--skip-export');
-const EXTRACT = process.env.EXTRACT_PATH || 'C:/Users/atenr/Downloads/wms-full-backup.json';
+const EXTRACT = process.env.EXTRACT_PATH || 'C:/Users/atenr/Downloads/wms-final-extract-2026-05-30 (6).json';
 
 // moved_by markers considered safe (test/seed/import). A move outside this set is treated as a
 // real human scan → the reload is REFUSED unless --override-abort-guard (protects against a
 // catastrophic clean-reload after go-live).
-const SAFE_MOVED_BY = new Set(['import-baseline', 'import', 'seed', 'dynatrack', 'system']);
+const SAFE_MOVED_BY = new Set(['import-baseline', 'import', 'seed', 'dynatrack', 'system', 'ebay-sync', 'intake', 'archive', 'unarchive']);
 const GARBAGE_RE = /^\d{20,}$/;            // ~20+ digit numeric outlier
 const FALLBACK_TS = '2026-05-27T20:00:00.000Z';
 
@@ -73,25 +84,29 @@ async function bulkInsert(client, table, cols, rows, conflict = '') {
   // ---- 1) Load + transform the extract (read-only file) -------------------------------------
   const ex = JSON.parse(fs.readFileSync(EXTRACT, 'utf8'));
 
-  // Locations: collapse any SHIPPED-type location into a single 'SHIPPED'.
+  // Locations: import the non-SHIPPED locations (SHELF_BIN / UNLISTED_TOTE). The two historical
+  // SHIPPED locations ('SHIPPED','SHIPPED-1') are NOT imported (live-only). We then seed exactly ONE
+  // empty canonical 'SHIPPED' location as the destination for forward ship-moves (reconcile Phase 2).
   const locByName = new Map();
   for (const l of ex.locations) {
-    const type = l.locationType;
-    const name = (type === 'SHIPPED') ? 'SHIPPED' : l.name;
-    if (!locByName.has(name)) locByName.set(name, { name, type, created_at: l.createdAt || FALLBACK_TS });
+    if (l.locationType === 'SHIPPED') continue;                 // drop historical SHIPPED / SHIPPED-1
+    if (!locByName.has(l.name)) locByName.set(l.name, { name: l.name, type: l.locationType, created_at: l.createdAt || FALLBACK_TS });
   }
+  locByName.set('SHIPPED', { name: 'SHIPPED', type: 'SHIPPED', created_at: FALLBACK_TS });  // one empty canonical SHIPPED
 
-  // Items: derive status/location; flag garbage serials.
+  // Items: LIVE-ONLY — drop every shipped item; import the rest as STORED. intake_date left NULL.
   const items = [];
   const flaggedGarbage = [];
+  let droppedShipped = 0;
   let nullLoc = 0;
   for (const it of ex.items) {
+    const locType = it.currentLocation ? it.currentLocation.locationType : null;
+    if (locType === 'SHIPPED') { droppedShipped++; continue; }   // drop shipped (eBay/ShippingEasy own these now)
     const serial = String(it.serialId);
-    const isShipped = it._locationType === 'SHIPPED';
-    const location = isShipped ? 'SHIPPED' : (it._locationName || null);
-    const status = isShipped ? 'SHIPPED' : 'STORED';   // STAGED_UNLISTED dropped
-    if (GARBAGE_RE.test(serial)) flaggedGarbage.push(serial);
-    if (location === null) nullLoc++;
+    const location = (it.currentLocation && it.currentLocation.name) || null;
+    const status = 'STORED';                                     // v1 live model is STORED-only (remaps the 6 STAGED_UNLISTED)
+    if (GARBAGE_RE.test(serial)) flaggedGarbage.push(serial);    // expected EMPTY (garbage was all on shipped rows)
+    if (location === null) nullLoc++;                            // expected 0 for the live set
     items.push({ serial, status, location, notes: it.notes || null,
                  created_at: it.createdAt || FALLBACK_TS, updated_at: it.updatedAt || it.createdAt || FALLBACK_TS });
   }
@@ -155,7 +170,8 @@ async function bulkInsert(client, table, cols, rows, conflict = '') {
     const delM = (await client.query('DELETE FROM moves')).rowCount;
     const delI = (await client.query('DELETE FROM items')).rowCount;
     const delL = (await client.query('DELETE FROM locations')).rowCount;
-    const delS = (await client.query('DELETE FROM sequences')).rowCount;   // FLAG 2 (b): clear → rebuild only the extract's computed prefixes
+    const delS = (await client.query('DELETE FROM sequences')).rowCount;   // clear → rebuild only the extract's computed prefixes
+    const delE = (await client.query('DELETE FROM ebay_order_lines')).rowCount;  // truncate — stale matched_serial pointers; rebuilds on next eBay sync
     const insL = await bulkInsert(client, 'locations', ['name', 'type', 'created_at'], locations, 'ON CONFLICT (name) DO NOTHING');
     const insI = await bulkInsert(client, 'items', ['serial', 'status', 'location', 'notes', 'created_at', 'updated_at'], items, 'ON CONFLICT (serial) DO NOTHING');
     const insMv = await bulkInsert(client, 'moves', ['serial', 'from_location', 'to_location', 'moved_by', 'moved_at'], moves);
@@ -169,17 +185,25 @@ async function bulkInsert(client, table, cols, rows, conflict = '') {
     const cMove = (await client.query('SELECT count(*)::int c FROM moves')).rows[0].c;
     const cSeq = (await client.query('SELECT count(*)::int c FROM sequences')).rows[0].c;
     const orphan = (await client.query('SELECT count(*)::int c FROM items i WHERE i.location IS NOT NULL AND NOT EXISTS (SELECT 1 FROM locations l WHERE l.name = i.location)')).rows[0].c;
+    const cShippedItems = (await client.query("SELECT count(*)::int c FROM items WHERE location = 'SHIPPED'")).rows[0].c;
+    const cEbayLines = (await client.query('SELECT count(*)::int c FROM ebay_order_lines')).rows[0].c;
+    const cIntakeSet = (await client.query('SELECT count(*)::int c FROM items WHERE intake_date IS NOT NULL')).rows[0].c;
+    const cArchived = (await client.query('SELECT count(*)::int c FROM items WHERE archived_at IS NOT NULL')).rows[0].c;
 
     log('\n================ DRY-RUN DELTAS (per table) ================');
-    log('DELETE  : locations -' + delL + ' | items -' + delI + ' | moves -' + delM + ' | sequences -' + delS);
+    log('DELETE  : locations -' + delL + ' | items -' + delI + ' | moves -' + delM + ' | sequences -' + delS + ' | ebay_order_lines -' + delE);
     log('INSERT  : locations +' + insL + ' | items +' + insI + ' | moves +' + insMv + ' | sequences +' + insSeq);
+    log('dropped shipped items (not imported): ' + droppedShipped);
     log('\n================ END-STATE (in-transaction) ================');
     log('locations = ' + cLoc + '  by type: ' + JSON.stringify(cLocType));
     log('items     = ' + cItem + '  by status: ' + JSON.stringify(cItemStatus));
     log('moves     = ' + cMove + '  (synthetic import-baseline; ' + nullLoc + ' item(s) had no location → no move)');
     log('sequences = ' + cSeq + '  -> ' + JSON.stringify(sequences));
+    log('items in SHIPPED location (must be 0) = ' + cShippedItems);
+    log('ebay_order_lines (must be 0, repopulates on sync) = ' + cEbayLines);
+    log('items with intake_date set (must be 0) = ' + cIntakeSet + '  | archived (must be 0) = ' + cArchived);
     log('FK orphan item.location (must be 0) = ' + orphan);
-    log('referenced-but-missing locations auto-added as GENERAL: ' + JSON.stringify(addedRefLocs));
+    log('referenced-but-missing locations auto-added as GENERAL (must be []): ' + JSON.stringify(addedRefLocs));
     log('FLAGGED garbage serial(s) [imported, excluded from sequences]: ' + JSON.stringify(flaggedGarbage));
 
     if (COMMIT) { await client.query('COMMIT'); log('\n*** COMMITTED — persistent write complete. ***'); }

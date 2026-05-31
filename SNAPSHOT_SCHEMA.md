@@ -90,5 +90,5 @@ Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment
 - **No `ebay_listings` table, no order-*header* table.** eBay listings and order headers are still fetched live by `/api/ebay/*` and held only in the browser (`ALL_LISTINGS`, `ORDERS`) — never written to Postgres. (See SNAPSHOT_ROUTES / SNAPSHOT_FRONTEND.) **Exception:** `ebay_order_lines` (migration 0001) persists sold-order *lines* and is now **written** by `reconcileOrderLines` on the orders sync (2026-05-29) — but still **not READ by any route** (the Pick List reads live orders via a server-side join); the read paths land in later sessions of the rework.
 - No Supabase anywhere (rule 7). DB is Railway Postgres via `DATABASE_URL`.
 
-## Production data baseline (as of 2026-04-02, rule 27)
-537 locations · 3,380 items · 3,969 moves · 12 sequences. Drastically different counts in a session = investigate before changing anything.
+## Production data baseline (as of 2026-05-31 CUTOVER, rule 27)
+**548 locations** (526 SHELF_BIN + 21 UNLISTED_TOTE + 1 empty SHIPPED) · **3,390 items** (all `status='STORED'`, `intake_date` NULL, `archived_at` NULL) · **3,390 moves** (all `moved_by='import-baseline'`) · 12 sequences (vestigial) · `ebay_order_lines` empty until the first post-cutover eBay sync. Live-inventory-only baseline (shipped items dropped — eBay/ShippingEasy own shipped now). Drastically different counts in a session = investigate before changing anything. *(Prior baseline 2026-04-02: 537 loc / 3,380 items / 3,969 moves — superseded by the cutover reload.)*
