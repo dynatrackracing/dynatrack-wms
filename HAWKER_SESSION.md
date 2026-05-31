@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 0ef6200 @ 2026-05-30 (origin/main; soft-archive + reconcile-fix + StartTime are LIVE). Local HEAD 9307667 (multi-serial SKU tokenizer) is ahead — awaits an authorized push.
-STAMP UPDATED BY: Claude Code, session 16:58 UTC 2026-05-31
+LAST PUSHED COMMIT: 6f893a6 @ 2026-05-31 (origin/main; multi-serial SKU tokenizer LIVE). Local HEAD 883458d (CUTOVER reload — already applied to prod DB directly) awaits an authorized push.
+STAMP UPDATED BY: Claude Code, session 18:11 UTC 2026-05-31
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -40,7 +40,7 @@ First post-cutover eBay sync: orders shipped *before* cutover reference dropped 
 - Old-WMS subscription cancellation — later, Ry's call (keep as fallback a few days).
 
 ### Files
-scripts/import-baseline.mjs, SNAPSHOT_SCHEMA.md (+ HAWKER_RULES rule 27 data-counts) updated to the post-cutover baseline, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/migration change. Rollback artifacts: the Railway snapshot + two `~/hawker-preexport-*.json` dumps. Commit `<pending>`.
+scripts/import-baseline.mjs, SNAPSHOT_SCHEMA.md (+ HAWKER_RULES rule 27 data-counts) updated to the post-cutover baseline, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/migration change. Rollback artifacts: the Railway snapshot + two `~/hawker-preexport-*.json` dumps. Commit `883458d`.
 
 ### Memory files
 HAWKER_SESSION + HAWKER_CHANGELOG + HAWKER_RULES updated → **Ry: re-upload the four memory files to claude.ai project knowledge before the next web-Claude session (Rule 39).**
