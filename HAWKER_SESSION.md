@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 6f893a6 @ 2026-05-31 (origin/main; multi-serial SKU tokenizer LIVE). Local HEAD 883458d (CUTOVER reload — already applied to prod DB directly) awaits an authorized push.
-STAMP UPDATED BY: Claude Code, session 18:11 UTC 2026-05-31
+LAST PUSHED COMMIT: d6224b2 @ 2026-05-31 (Scan & Move Scanner|Manual toggle). Prior cutover (883458d) is LIVE on origin/main + applied to prod DB. Pushing this now per the brief.
+STAMP UPDATED BY: Claude Code, session 18:47 UTC 2026-05-31
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -31,7 +31,7 @@ Read the real `#page-scan` Step 1 markup, `commitScan` (the input `input`→time
 Served HTML carries the toggle + `scanMode` + both hint strings + Add button + the `scanMode==='scanner'` gate; `node --check` inline JS OK; **11 `.page` divs all depth-0 siblings; div balance 333/333** (HEAD 330 + 3 new wrapper/seg divs, still balanced); `/api/health` 200. HID timing isn't headless-testable → **Ry's tablet test:** (a) Scanner — 3 fast scans → 3 whole rows, no single-letter rows; (b) Manual — type ENG1234+Enter → one clean row (no premature "E"); type another + tap Add → adds; (c) back to Scanner — scanning still auto-adds.
 
 ### Files
-public/index.html, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/server change. Commit `<pending>`.
+public/index.html, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/server change. Commit `d6224b2`.
 
 ### Memory files
 HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
