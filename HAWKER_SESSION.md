@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: a59ed96 @ 2026-05-31 (reconcile ship-once guard, migration 0004 — applied to prod + backfilled). All prior work LIVE on origin/main. Pushing this now (Rule 4).
-STAMP UPDATED BY: Claude Code, session 23:14 UTC 2026-05-31
+LAST PUSHED COMMIT: 167dfd1 @ 2026-06-01 (Inventory Health Hide/Restore omissions, migration 0005 — applied to prod). All prior work LIVE on origin/main. Pushing this now (Rule 4).
+STAMP UPDATED BY: Claude Code, session 00:20 UTC 2026-06-01
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -34,7 +34,7 @@ Read `loadInventoryHealth`: rows are keyed by `normalizeSkuKey`. **WMS-Only** om
 `node --check` server.js + inline JS OK; **div balance 342/342; 11 `.page` divs depth-0 siblings (page-health not regressed)**; migration table live (0 rows). Routes registration + the hide→count−1→Hidden→Restore round-trip + persistence across reload/re-sync = post-deploy (routes 401 unauth) + **Ry's tablet pass**. `/api/health` 200 post-deploy.
 
 ### Files
-db/migrations/0005-health-omissions.sql, server.js, public/index.html, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. Commit `<pending>`.
+db/migrations/0005-health-omissions.sql, server.js, public/index.html, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. Commit `167dfd1`.
 
 ### Memory files
 HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
