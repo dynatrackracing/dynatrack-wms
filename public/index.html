@@ -520,7 +520,7 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     </div>
     <div class="card" style="border-left:3px solid var(--warn)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
-        <div><div class="sl">eBay Only</div><div class="sv" style="color:var(--warn)" id="h-ebay-only">–</div></div>
+        <div><div class="sl">eBay Only</div><div class="sv" style="color:var(--warn)" id="h-ebay-only">–</div><div id="h-ebay-hidden" style="font-size:10px;margin-top:3px;color:var(--muted)"></div></div>
         <div style="font-size:22px">⚠</div>
       </div>
     </div>
@@ -1822,6 +1822,9 @@ var healthFilter     = '';
 var healthStatusFilter = 'all';
 var healthStoreFilter  = 'all';
 var healthBandFilter   = 'all';   // age-band chip — only affects the WMS-Only bucket
+var healthOmitWms  = new Set();   // persisted Hide/Restore omissions (omit_key sets, migration 0005)
+var healthOmitEbay = new Set();
+var healthStatic   = {};          // omission-independent card figures (wmsItems/staging/ebayTotal)
 
 // ── SKU ↔ WMS-serial matching (Rule 8) — CANONICAL frontend copy ─────────────────
 // normalizeSkuKey MUST stay byte-identical to the server.js copy (used by reconcileOrderLines).
@@ -1903,10 +1906,13 @@ async function loadInventoryHealth() {
     }
 
     // Pull all WMS items in one go
-    var [storedItems, stagedItems] = await Promise.all([
+    var [storedItems, stagedItems, omissions] = await Promise.all([
       api('/items?status=STORED&limit=10000'),
       api('/items?status=STAGED_UNLISTED&limit=10000'),
+      api('/health/omissions'),
     ]);
+    healthOmitWms  = new Set(omissions.wmsOnly  || []);
+    healthOmitEbay = new Set(omissions.ebayOnly || []);
 
     // ── Build lookup maps ──────────────────────────────
     // eBay normalize + multi-serial tokenizer are now top-level (normalizeSkuKey / listedSerialKeys).
@@ -1976,34 +1982,11 @@ async function loadInventoryHealth() {
     rows.sort(function(a, b) { return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0); });  // default sort: SKU ascending
     healthData = rows;
 
-    // ── Stats ──────────────────────────────────────────
-    var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0, 'Cross-listed':0, Incomplete:0 };
-    var bands  = { Overdue:0, Aging:0, New:0, Unknown:0 };
-    rows.forEach(function(r) {
-      counts[r.status] = (counts[r.status]||0) + 1;
-      if (r.status === 'WMS Only') bands[r.band] = (bands[r.band]||0) + 1;
-    });
-
-    document.getElementById('h-matched').textContent    = (counts['Matched']   ||0).toLocaleString();
-    document.getElementById('h-ebay-only').textContent  = (counts['eBay Only'] ||0).toLocaleString();
-    document.getElementById('h-wms-only').textContent   = (counts['WMS Only']  ||0).toLocaleString();
-    document.getElementById('h-duplicate').textContent  = (counts['Duplicate'] ||0).toLocaleString();
-    document.getElementById('h-cross').textContent      = (counts['Cross-listed'] ||0).toLocaleString();
-    document.getElementById('h-incomplete').textContent = (counts['Incomplete'] ||0).toLocaleString();
+    // ── Static (omission-independent) figures ──────────
+    healthStatic = { wmsItems: storedItems.length, staging: stagedItems.length, ebayTotal: liveListings.length };
     document.getElementById('h-staging').textContent    = stagedItems.length.toLocaleString();
     document.getElementById('h-wms-items').textContent  = storedItems.length.toLocaleString();
     document.getElementById('h-ebay-total').textContent = liveListings.length.toLocaleString();  // live (available>0) only
-    // one-line age breakdown under the WMS-Only stat card (red · yellow · green · gray-if-any)
-    document.getElementById('h-wms-bands').innerHTML =
-      '<span style="color:var(--err)">' + bands.Overdue + ' overdue</span> · ' +
-      '<span style="color:var(--warn)">' + bands.Aging + ' aging</span> · ' +
-      '<span style="color:var(--success)">' + bands.New + ' new</span>' +
-      (bands.Unknown ? ' · <span style="color:var(--muted)">' + bands.Unknown + ' unknown</span>' : '');
-
-    // Update tab labels (order MUST match the #health-tabs DOM order, incl. Cross-listed)
-    var tabs = document.querySelectorAll('#health-tabs .tab');
-    var labels = ['All ('+rows.length+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+(counts['WMS Only']||0)+')', 'Incomplete ('+(counts['Incomplete']||0)+')', 'Duplicate ('+counts['Duplicate']+')', 'Cross-listed ('+counts['Cross-listed']+')'];
-    tabs.forEach(function(t,i){ if(labels[i]) t.textContent = labels[i]; });
 
     var now = new Date().toLocaleString('en-AU');
     document.getElementById('health-sync-label').textContent = 'eBay listings vs WMS active shelf inventory · Last sync: ' + now;
@@ -2014,7 +1997,8 @@ async function loadInventoryHealth() {
       storedItems.length.toLocaleString() + ' active shelf items. Sold-out listings (' + soldOutExcluded.toLocaleString() +
       ') and staging items (' + stagedItems.length.toLocaleString() + ') are excluded from health buckets.';
 
-    renderHealthTable();
+    // Mark hidden (omitted) rows, recompute the omission-aware bucket counts/cards, render.
+    applyHealthOmissions();
     setSynced();
   } catch(e) {
     // Defensive layer: never leave the Health section truly blank with no signal.
@@ -2028,6 +2012,59 @@ async function loadInventoryHealth() {
     var tableEl = document.getElementById('health-table');
     if (tableEl) tableEl.innerHTML = '<tr><td colspan="4" class="loading">Could not render — see Console.</td></tr>';
   }
+}
+
+// ── Inventory Health Hide/Restore omissions (eBay-Only + WMS-Only only, 2026-05-31) ───────────────
+// WMS-Only omit key = item serial; eBay-Only omit key = the row's normalized key (multi-serial
+// listings share a raw SKU, so raw SKU is NOT unique — the normalized key is). Persisted server-side
+// (GET/POST /api/health/omissions). applyHealthOmissions marks r.hidden + recomputes the bucket
+// headline/age-band/hidden counts EXCLUDING omitted rows, then renders.
+function healthWmsKey(r) { return (r.wms && r.wms[0]) ? r.wms[0].serial : r.key; }
+function healthOmitKeyFor(r) { return r.status === 'WMS Only' ? healthWmsKey(r) : r.key; }
+function applyHealthOmissions() {
+  var counts = { Matched:0, 'eBay Only':0, 'WMS Only':0, Duplicate:0, 'Cross-listed':0, Incomplete:0 };
+  var bands  = { Overdue:0, Aging:0, New:0, Unknown:0 };
+  var hid    = { 'WMS Only':0, 'eBay Only':0 };
+  var active = 0;
+  (healthData || []).forEach(function(r) {
+    r.hidden = (r.status === 'WMS Only'  && healthOmitWms.has(healthWmsKey(r)))
+            || (r.status === 'eBay Only' && healthOmitEbay.has(r.key));
+    if (r.hidden) { hid[r.status] = (hid[r.status]||0) + 1; return; }   // omitted → excluded from headline/bands
+    active++;
+    counts[r.status] = (counts[r.status]||0) + 1;
+    if (r.status === 'WMS Only') bands[r.band] = (bands[r.band]||0) + 1;
+  });
+  document.getElementById('h-matched').textContent    = (counts['Matched']   ||0).toLocaleString();
+  document.getElementById('h-ebay-only').textContent  = (counts['eBay Only'] ||0).toLocaleString();
+  document.getElementById('h-wms-only').textContent   = (counts['WMS Only']  ||0).toLocaleString();
+  document.getElementById('h-duplicate').textContent  = (counts['Duplicate'] ||0).toLocaleString();
+  document.getElementById('h-cross').textContent      = (counts['Cross-listed'] ||0).toLocaleString();
+  document.getElementById('h-incomplete').textContent = (counts['Incomplete'] ||0).toLocaleString();
+  document.getElementById('h-wms-bands').innerHTML =
+    '<span style="color:var(--err)">' + bands.Overdue + ' overdue</span> · ' +
+    '<span style="color:var(--warn)">' + bands.Aging + ' aging</span> · ' +
+    '<span style="color:var(--success)">' + bands.New + ' new</span>' +
+    (bands.Unknown ? ' · <span style="color:var(--muted)">' + bands.Unknown + ' unknown</span>' : '') +
+    (hid['WMS Only'] ? ' · <span style="color:var(--muted)">' + hid['WMS Only'] + ' hidden</span>' : '');
+  document.getElementById('h-ebay-hidden').textContent = hid['eBay Only'] ? (hid['eBay Only'] + ' hidden') : '';
+  var tabs = document.querySelectorAll('#health-tabs .tab');
+  var labels = ['All ('+active+')', 'Matched ('+counts['Matched']+')', 'eBay Only ('+counts['eBay Only']+')', 'WMS Only ('+counts['WMS Only']+')', 'Incomplete ('+counts['Incomplete']+')', 'Duplicate ('+counts['Duplicate']+')', 'Cross-listed ('+counts['Cross-listed']+')'];
+  tabs.forEach(function(t,i){ if(labels[i]) t.textContent = labels[i]; });
+  renderHealthTable();
+}
+async function hideHealthRow(bucket, key) {
+  try {
+    await api('/health/omissions', { method: 'POST', body: { key: key, bucket: bucket } });
+    (bucket === 'WMS_ONLY' ? healthOmitWms : healthOmitEbay).add(key);
+    showToast('Hidden from the report'); applyHealthOmissions();
+  } catch(e) { showToast('Hide failed: ' + e.message, true); }
+}
+async function restoreHealthRow(bucket, key) {
+  try {
+    await api('/health/omissions/restore', { method: 'POST', body: { key: key, bucket: bucket } });
+    (bucket === 'WMS_ONLY' ? healthOmitWms : healthOmitEbay).delete(key);
+    showToast('Restored to the report'); applyHealthOmissions();
+  } catch(e) { showToast('Restore failed: ' + e.message, true); }
 }
 
 function renderHealthTable() {
@@ -2046,10 +2083,20 @@ function renderHealthTable() {
 
   var tb = document.getElementById('health-table');
   var showingEl = document.getElementById('health-showing');
+  // De-emphasized "Hidden" sub-section (Pick List Errors/Dismissed styling) — omitted rows + Restore.
+  function hiddenSection(hid) {
+    if (!hid.length) return '';
+    return '<tr><td colspan="4" style="background:var(--bg3);border-left:4px solid var(--muted);padding:9px 14px;font-weight:700;color:var(--muted);opacity:.85">'
+      + 'Hidden <span style="font-weight:600">(' + hid.length + ')</span>'
+      + ' <span style="font-size:11px;font-weight:400">— omitted from the report; Restore to bring a row back</span></td></tr>'
+      + hid.slice(0, 300).map(healthRowHtml).join('');
+  }
 
-  // ── WMS-Only view → grouped by age band, Overdue → Aging → New → Unknown (action priority) ──
+  // ── WMS-Only view → active grouped by age band + a Hidden sub-section ──
   if (healthStatusFilter === 'WMS Only') {
-    if (healthBandFilter !== 'all') data = data.filter(function(r){ return r.band === healthBandFilter; });
+    var activeW = data.filter(function(r){ return !r.hidden; });
+    var hiddenW = data.filter(function(r){ return r.hidden; });
+    if (healthBandFilter !== 'all') activeW = activeW.filter(function(r){ return r.band === healthBandFilter; });
     var ORDER = [
       ['Overdue', 'list or decommission — sitting 21+ days'],
       ['Aging',   '14–20 days — coming due'],
@@ -2058,7 +2105,7 @@ function renderHealthTable() {
     ];
     var html = '', used = 0, CAP = 600;
     ORDER.forEach(function(o) {
-      var grp = data.filter(function(r){ return r.band === o[0]; });
+      var grp = activeW.filter(function(r){ return r.band === o[0]; });
       if (!grp.length || used >= CAP) return;
       var col = BAND_COLOR[o[0]], faint = o[0] === 'New' ? ';opacity:.8' : '';
       html += '<tr><td colspan="4" style="background:var(--bg3);border-left:4px solid ' + col + ';padding:9px 14px;font-weight:700;color:' + col + faint + '">'
@@ -2068,12 +2115,24 @@ function renderHealthTable() {
       html += take.map(healthRowHtml).join('');
       used += take.length;
     });
-    tb.innerHTML = html || '<tr><td colspan="4" class="loading">No WMS-Only items in this band</td></tr>';
-    showingEl.textContent = data.length.toLocaleString() + ' rows' + (used < data.length ? ' (showing first ' + used + ')' : '');
+    if (healthBandFilter === 'all') html += hiddenSection(hiddenW);   // Hidden shown in the unfiltered band view
+    tb.innerHTML = html || '<tr><td colspan="4" class="loading">No WMS-Only items here</td></tr>';
+    showingEl.textContent = (activeW.length + (healthBandFilter === 'all' ? hiddenW.length : 0)).toLocaleString() + ' rows';
     return;
   }
 
-  // ── All other views → flat list ──
+  // ── eBay-Only view → active flat + a Hidden sub-section ──
+  if (healthStatusFilter === 'eBay Only') {
+    var activeE = data.filter(function(r){ return !r.hidden; });
+    var hiddenE = data.filter(function(r){ return r.hidden; });
+    var htmlE = activeE.slice(0, 500).map(healthRowHtml).join('') + hiddenSection(hiddenE);
+    tb.innerHTML = htmlE || '<tr><td colspan="4" class="loading">No eBay-Only listings</td></tr>';
+    showingEl.textContent = (activeE.length + hiddenE.length).toLocaleString() + ' rows';
+    return;
+  }
+
+  // ── All / other views → flat list; hidden eBay-Only/WMS-Only rows are suppressed (decluttered) ──
+  data = data.filter(function(r){ return !r.hidden; });
   var show = data.slice(0, 500);
   if (!show.length) { tb.innerHTML = '<tr><td colspan="4" class="loading">No results</td></tr>'; showingEl.textContent = ''; return; }
   tb.innerHTML = show.map(healthRowHtml).join('');
@@ -2088,6 +2147,14 @@ function healthRowHtml(r) {
   var badge = '<span class="badge ' + badgeCls + '">' + r.status + '</span>';
   if (r.status === 'WMS Only' && r.ageDays != null) {
     badge += ' <span style="font-size:10px;font-weight:700;color:' + BAND_COLOR[r.band] + '">' + r.ageDays + 'd</span>';
+  }
+  // Hide/Restore — only on the two opt-in buckets (eBay-Only, WMS-Only).
+  if (r.status === 'WMS Only' || r.status === 'eBay Only') {
+    var bk = r.status === 'WMS Only' ? 'WMS_ONLY' : 'EBAY_ONLY';
+    var ok = healthOmitKeyFor(r).replace(/'/g, "\\'");
+    badge += r.hidden
+      ? '<br><button class="btn btn-s" style="margin-top:5px;padding:2px 9px;font-size:11px" onclick="restoreHealthRow(\'' + bk + '\',\'' + ok + '\')">Restore</button>'
+      : '<br><button class="btn btn-s" style="margin-top:5px;padding:2px 9px;font-size:11px;color:var(--muted)" onclick="hideHealthRow(\'' + bk + '\',\'' + ok + '\')">Hide</button>';
   }
 
   function listingBlock(l) {
@@ -2157,7 +2224,7 @@ function exportHealthCSV() {
   var rows = healthData;
   if (healthStatusFilter !== 'all') rows = rows.filter(function(r){ return r.status === healthStatusFilter; });
   if (healthStoreFilter !== 'all') rows = rows.filter(function(r){ return (r.stores||[]).indexOf(healthStoreFilter) >= 0; });
-  var csv = 'SKU,Status,Stores,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location,WMS Intake Date,Age Days,Age Band,Incomplete\n';
+  var csv = 'SKU,Status,Stores,eBay Title,eBay Price,eBay Qty,WMS Serial,WMS Location,WMS Intake Date,Age Days,Age Band,Incomplete,Omitted\n';
   rows.forEach(function(r) {
     var wmsSerial = r.wms.map(function(i){ return i.serial; }).join(';');
     var wmsLoc    = r.wms.map(function(i){ return i.location||''; }).join(';');
@@ -2175,6 +2242,7 @@ function exportHealthCSV() {
       (r.status === 'WMS Only' && r.ageDays != null) ? r.ageDays : '',
       r.status === 'WMS Only' ? (r.band || '') : '',
       r.status === 'Incomplete' ? 'yes' : '',
+      r.hidden ? 'yes' : '',
     ].join(',') + '\n';
   });
   var a = document.createElement('a');

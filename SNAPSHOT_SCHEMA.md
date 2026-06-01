@@ -2,7 +2,7 @@
 
 > Orientation map of the database. Regenerate at session end if `db/schema.sql` or a `db/migrations/` file changed (HAWKER_RULES rule 38).
 > Generated 2026-05-29 from `db/schema.sql` **+ applied migrations in `db/migrations/`**. PostgreSQL (Railway).
-> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`** (2026-05-31).
+> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31).
 
 ## Tables
 
@@ -75,6 +75,16 @@ Persists eBay **sold order LINES** (one row per `OrderLineItemID`) so fulfilment
 | `last_synced` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | set by the sync each pass |
 | `ebay_last_modified` | TIMESTAMPTZ (nullable) | eBay's last-modified, for change detection |
 | `ship_move_applied_at` | TIMESTAMPTZ (nullable) | *migration 0004 (2026-05-31)* — **ship-once guard.** NULL = the reconcile Phase-2 ship-move has not yet been applied for this line. Set (in the same txn that flips the matched item → SHIPPED) the first time the line ships its item. Phase 2 only ships lines where this is NULL, so a **returned item scanned back to STORED is not re-shipped** (its line stays `disposition='SHIPPED'` in eBay's 90-day window but is now applied). Phase 1's ON CONFLICT never touches it. Backfilled to `COALESCE(ebay_shipped_time,last_synced,NOW())` on all 1,842 then-SHIPPED lines at deploy (so no existing ship re-clobbers). A genuine re-sale = a new OLI = a fresh NULL line → ships once. |
+
+### `health_omissions` — *added by migration `0005-health-omissions.sql` (2026-05-31); NOT in `schema.sql`*
+Persisted per-row **Hide** for the Inventory Health **eBay-Only** and **WMS-Only** buckets (declutter the report to actionable discrepancies; survives refresh/re-sync/device, like Pick List DISMISSED). **View-suppression record ONLY** — never touches `items`/`moves`/listings; eBay read-only (Rule 25). Starts empty.
+| Column | Type | Notes |
+|---|---|---|
+| `omit_key` | TEXT NOT NULL | **`WMS_ONLY` → `items.serial`** ; **`EBAY_ONLY` → `normalizeSkuKey(listing SKU)`** (the render's row key — raw SKU isn't unique for multi-serial listings). |
+| `bucket` | TEXT NOT NULL | **CHECK** ∈ `WMS_ONLY` \| `EBAY_ONLY`. |
+| `note` | TEXT (nullable) | optional. |
+| `created_at` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | |
+| | | **PK `(omit_key, bucket)`** — same key can't collide across buckets; hide = INSERT ON CONFLICT DO NOTHING, restore = DELETE. |
 
 ## Trigger
 - `touch_updated_at()` → `items_updated_at` BEFORE UPDATE on `items` keeps `updated_at` current.

@@ -1175,6 +1175,45 @@ app.post('/api/picklist/restore', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Inventory Health omissions (hide/restore for the eBay-Only + WMS-Only buckets) ──────────────
+// Persisted view-suppression record ONLY (migration 0005) — never touches items/moves/listings,
+// no eBay call (Rule 25). omit_key: WMS_ONLY → items.serial ; EBAY_ONLY → normalizeSkuKey(SKU).
+app.get('/api/health/omissions', requireAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT omit_key, bucket FROM health_omissions');
+    const out = { wmsOnly: [], ebayOnly: [] };
+    for (const r of rows) (r.bucket === 'WMS_ONLY' ? out.wmsOnly : out.ebayOnly).push(r.omit_key);
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/health/omissions { key, bucket, note? } — hide a row. Guarded bucket; idempotent.
+app.post('/api/health/omissions', requireAuth, async (req, res) => {
+  const { key, bucket, note } = req.body || {};
+  if (!key || (bucket !== 'WMS_ONLY' && bucket !== 'EBAY_ONLY')) {
+    return res.status(400).json({ error: 'key and bucket (WMS_ONLY|EBAY_ONLY) required' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO health_omissions (omit_key, bucket, note) VALUES ($1, $2, $3) ON CONFLICT (omit_key, bucket) DO NOTHING`,
+      [key, bucket, note || null]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/health/omissions/restore { key, bucket } — un-hide a row.
+app.post('/api/health/omissions/restore', requireAuth, async (req, res) => {
+  const { key, bucket } = req.body || {};
+  if (!key || (bucket !== 'WMS_ONLY' && bucket !== 'EBAY_ONLY')) {
+    return res.status(400).json({ error: 'key and bucket (WMS_ONLY|EBAY_ONLY) required' });
+  }
+  try {
+    const { rowCount } = await pool.query('DELETE FROM health_omissions WHERE omit_key = $1 AND bucket = $2', [key, bucket]);
+    res.json({ ok: true, restored: rowCount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/shipped — every SHIPPED item + its eBay ship info where matched. Read-only.
 // LEFT JOIN ebay_order_lines (disposition='SHIPPED') by matched_serial: recently-sold items
 // carry sku_raw/title/ebay_shipped_time/store; the historical baseline-imported shipped items

@@ -9,6 +9,36 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-01
+
+## 00:20 UTC — Inventory Health: Hide/Restore omissions for eBay-Only + WMS-Only (persisted)
+
+**Single deliverable:** a per-row **Hide** on the Inventory Health eBay-Only and WMS-Only lists → moves the row to a de-emphasized **Hidden** sub-section (declutter to actionable discrepancies); Restore brings it back. **Persisted server-side** (survives refresh/re-sync/device, like Pick List DISMISSED). ONE migration + 3 routes + frontend. **Scope: ONLY these two buckets** (no Hide on Matched/Duplicate/Cross-listed/Staging/Incomplete). View-suppression only — never touches items/moves/listings; eBay read-only (Rule 25). Reused top-level `normalizeSkuKey`.
+
+### Step 0 diagnose (Rule 1) — the stable per-row keys
+Read `loadInventoryHealth`: rows are keyed by `normalizeSkuKey`. **WMS-Only** omit key = **`r.wms[0].serial`** (item serial; rows are ~always 1 item). **eBay-Only** omit key = **`r.key`** (the row's NORMALIZED key) — confirmed raw SKU is NOT unique: a multi-serial listing (`"MOD15959V 16367V"`) makes two eBay-Only rows sharing one raw SKU, but distinct `r.key`s; the normalized key is also stable across re-syncs (same listing → same `listedSerialKeys`). Reported before wiring.
+
+### Migration 0005 (db/migrations/0005-health-omissions.sql, applied to prod)
+`CREATE TABLE health_omissions (omit_key TEXT, bucket TEXT CHECK IN ('WMS_ONLY','EBAY_ONLY'), note TEXT, created_at, PRIMARY KEY(omit_key,bucket))`. Additive, starts empty.
+
+### Routes (server.js, mirror dismiss/restore)
+`GET /api/health/omissions` → `{wmsOnly:[],ebayOnly:[]}`; `POST /api/health/omissions {key,bucket,note?}` → INSERT ON CONFLICT DO NOTHING; `POST /api/health/omissions/restore {key,bucket}` → DELETE. Bucket-guarded (400 on bad bucket). No eBay, no items/moves.
+
+### Frontend (public/index.html)
+- `loadInventoryHealth` fetches the omission set alongside items/listings into `healthOmitWms`/`healthOmitEbay`.
+- **`applyHealthOmissions`** (factored out; also re-run on hide/restore WITHOUT a refetch): marks `r.hidden`, recomputes bucket **headline + WMS-Only age-band counts EXCLUDING omitted**, sets a `· N hidden` sub-count under the WMS-Only card + `#h-ebay-hidden` under the eBay-Only card + tab labels (active counts).
+- `renderHealthTable`: WMS-Only view = active grouped by band **+ Hidden sub-section**; eBay-Only = active flat **+ Hidden**; All/other suppress hidden rows. WMS-Only band-grouping applied AFTER the valid/age-band split (an omitted valid item → Hidden, not its band); Incomplete unchanged.
+- `healthRowHtml` adds a subtle Hide button (active) / Restore button (hidden) on those two buckets only. `exportHealthCSV` gains an `Omitted` column. Theme: light, Hidden section styled like Pick List Errors/Dismissed (Rule 21).
+
+### Verify (Rule 17)
+`node --check` server.js + inline JS OK; **div balance 342/342; 11 `.page` divs depth-0 siblings (page-health not regressed)**; migration table live (0 rows). Routes registration + the hide→count−1→Hidden→Restore round-trip + persistence across reload/re-sync = post-deploy (routes 401 unauth) + **Ry's tablet pass**. `/api/health` 200 post-deploy.
+
+### Files
+db/migrations/0005-health-omissions.sql, server.js, public/index.html, SNAPSHOT_SCHEMA.md, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 # 2026-05-31
 
 ## 23:14 UTC — Fix: reconcile re-ships returned items (Phase 2 ship-once guard, migration 0004)
