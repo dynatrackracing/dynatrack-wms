@@ -2,7 +2,7 @@
 
 > Orientation map of the database. Regenerate at session end if `db/schema.sql` or a `db/migrations/` file changed (HAWKER_RULES rule 38).
 > Generated 2026-05-29 from `db/schema.sql` **+ applied migrations in `db/migrations/`**. PostgreSQL (Railway).
-> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31).
+> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31), **`0006-sessions.sql`** (2026-06-03).
 
 ## Tables
 
@@ -85,6 +85,16 @@ Persisted per-row **Hide** for the Inventory Health **eBay-Only** and **WMS-Only
 | `note` | TEXT (nullable) | optional. |
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | |
 | | | **PK `(omit_key, bucket)`** — same key can't collide across buckets; hide = INSERT ON CONFLICT DO NOTHING, restore = DELETE. |
+
+### `sessions` — *added by migration `0006-sessions.sql` (2026-06-03); NOT in `schema.sql`*
+Persistent auth tokens — **replaced the in-memory `sessions` Map** in server.js so logins survive deploys/restarts (the tablet no longer drops to login on every restart). Same random-hex token + 12h SLIDING expiry + `x-wms-token` header + route contracts; just DB-backed via the existing `pool`.
+| Column | Type | Notes |
+|---|---|---|
+| `token` | TEXT **PK** | opaque 64-char hex (`crypto.randomBytes(32).hex`) — same as before; stored raw (hashing is a future Rule-B option). |
+| `username` | TEXT NOT NULL | |
+| `created_at` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | |
+| `expires_at` | TIMESTAMPTZ NOT NULL | login = `NOW()+12h`; **`touchSession` slides it `+12h` on each authed request** (read-and-slide `UPDATE … WHERE token=$1 AND expires_at>NOW() RETURNING username`). Expired/unknown → 401. Hourly sweep `DELETE WHERE expires_at<=NOW()`. |
+| | | Index `sessions_expires_at` on `(expires_at)`. No new env var. |
 
 ## Trigger
 - `touch_updated_at()` → `items_updated_at` BEFORE UPDATE on `items` keeps `updated_at` current.

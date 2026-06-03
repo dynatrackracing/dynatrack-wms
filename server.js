@@ -18,41 +18,28 @@ const PORT = process.env.PORT || 3000;
 const WMS_USERNAME = process.env.WMS_USERNAME || 'admin';
 const WMS_PASSWORD = process.env.WMS_PASSWORD || '';
 
-// In-memory token store: token → { username, expires }
-const sessions = new Map();
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
-
-function createToken(username) {
-  const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { username, expires: Date.now() + SESSION_TTL_MS });
-  return token;
-}
-
-function validateToken(token) {
+// Persistent token store: the `sessions` table (migration 0006) — survives deploys/restarts (the old
+// in-memory Map dropped the tablet's login on every restart). Same random-hex token + 12h SLIDING
+// expiry + x-wms-token header + route contracts; just DB-backed via the existing `pool` (defined below).
+// touchSession: ONE atomic read-and-slide — a live token advances its 12h window (sliding expiry on
+// activity) and returns its username; an expired/unknown token → null. Used by requireAuth + /api/me.
+async function touchSession(token) {
   if (!token) return null;
-  const session = sessions.get(token);
-  if (!session) return null;
-  if (Date.now() > session.expires) { sessions.delete(token); return null; }
-  // Slide expiry on activity
-  session.expires = Date.now() + SESSION_TTL_MS;
-  return session;
+  const { rows } = await pool.query(
+    "UPDATE sessions SET expires_at = NOW() + INTERVAL '12 hours' WHERE token = $1 AND expires_at > NOW() RETURNING username",
+    [token]
+  );
+  return rows.length ? rows[0].username : null;
 }
-
-// Clean up expired sessions every hour
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, session] of sessions) {
-    if (now > session.expires) sessions.delete(token);
-  }
-}, 60 * 60 * 1000);
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
-function requireAuth(req, res, next) {
-  const token = req.headers['x-wms-token'];
-  if (!validateToken(token)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
+async function requireAuth(req, res, next) {
+  try {
+    const username = await touchSession(req.headers['x-wms-token']);
+    if (!username) return res.status(401).json({ error: 'Unauthorized' });
+    req.wmsUser = username;
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
 // ── Database ──────────────────────────────────────────────────────────────────
@@ -67,34 +54,47 @@ pool.query('SELECT 1').then(() => {
   console.error('✗ PostgreSQL connection failed:', err.message);
 });
 
+// Reclaim expired session rows hourly (expired tokens are already rejected by touchSession's
+// `expires_at > NOW()` guard; this sweep just frees rows). DB-backed (was an in-memory Map sweep).
+setInterval(() => {
+  pool.query('DELETE FROM sessions WHERE expires_at <= NOW()').catch(e => console.error('[sessions] cleanup failed:', e.message));
+}, 60 * 60 * 1000);
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Login ─────────────────────────────────────────────────────────────────────
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   if (!WMS_PASSWORD) {
     return res.status(503).json({ error: 'WMS_PASSWORD not configured. Add it in Railway Variables.' });
   }
   if (username === WMS_USERNAME && password === WMS_PASSWORD) {
-    const token = createToken(username);
-    return res.json({ ok: true, token, username });
+    try {
+      const token = crypto.randomBytes(32).toString('hex');   // same opaque 64-char hex token as before
+      await pool.query(
+        "INSERT INTO sessions (token, username, expires_at) VALUES ($1, $2, NOW() + INTERVAL '12 hours')",
+        [token, username]
+      );
+      return res.json({ ok: true, token, username });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
   }
   res.status(401).json({ error: 'Invalid username or password' });
 });
 
-app.post('/api/logout', (req, res) => {
+app.post('/api/logout', async (req, res) => {
   const token = req.headers['x-wms-token'];
-  if (token) sessions.delete(token);
+  try { if (token) await pool.query('DELETE FROM sessions WHERE token = $1', [token]); } catch (e) {}
   res.json({ ok: true });
 });
 
-app.get('/api/me', (req, res) => {
-  const token = req.headers['x-wms-token'];
-  const session = validateToken(token);
-  if (!session) return res.status(401).json({ error: 'Not logged in' });
-  res.json({ username: session.username });
+app.get('/api/me', async (req, res) => {
+  try {
+    const username = await touchSession(req.headers['x-wms-token']);
+    if (!username) return res.status(401).json({ error: 'Not logged in' });
+    res.json({ username });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Health (public — Railway needs this) ─────────────────────────────────────

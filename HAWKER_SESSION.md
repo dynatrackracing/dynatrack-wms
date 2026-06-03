@@ -11,6 +11,37 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-06-03
 
+## 05:12 UTC — Persistent session store: logins survive deploys/restarts (DB-backed sessions, migration 0006)
+
+**Single deliverable (lead hardening item):** moved auth tokens from an in-memory `Map` into a Postgres `sessions` table, so a deploy/restart no longer drops the tablet's login. Migration + `server.js` only — **no frontend change** (confirmed); eBay untouched (Rule 25); no new env var.
+
+### Diagnose-first (Rules 1, E)
+Read the real auth code: in-memory `sessions` Map, `createToken` (`crypto.randomBytes(32).hex` = 64-char), sync `validateToken` (slides expiry), hourly Map sweep, `requireAuth`. Grepped the frontend (`x-wms-token`/`wms_token`/`WMS_TOKEN`/`showLogin`): the token is **opaque to the frontend** — it stores `data.token` in localStorage and sends `x-wms-token`; only the `{ok,token,username}` / `{username}` shapes + header name matter. **Confirmed no index.html change needed.**
+
+### Migration 0006 (db/migrations/0006-sessions.sql, applied to prod)
+`CREATE TABLE sessions (token TEXT PK, username TEXT NOT NULL, created_at, expires_at TIMESTAMPTZ NOT NULL)` + index on `expires_at`. Additive, empty. schema.sql not edited (Rule 9).
+
+### server.js (Map → table; every contract kept; handlers now async)
+- New **`touchSession(token)`** = atomic read-and-slide `UPDATE sessions SET expires_at=NOW()+INTERVAL '12 hours' WHERE token=$1 AND expires_at>NOW() RETURNING username` → username or null. Used by `requireAuth` (now async) **and** `/api/me`.
+- `/api/login`: same `crypto.randomBytes(32).hex` token → `INSERT INTO sessions … expires_at=NOW()+12h`; response `{ok,token,username}` unchanged.
+- `/api/logout`: `DELETE FROM sessions WHERE token=$1`. `/api/me`: `touchSession` → `{username}` or 401.
+- Hourly cleanup repointed to `DELETE FROM sessions WHERE expires_at<=NOW()` (moved after `pool`). **Removed** the Map + `createToken`/`validateToken`/`SESSION_TTL_MS`. No new env var; token stored raw (hashing = future Rule-B).
+
+### Apply order (gated)
+Migration applied to prod FIRST (table live: token PK + 2 indexes, 0 rows) after Ry's go-ahead → THEN push server.js (Railway auto-deploy, Rule 16). Order matters: code referencing the table can't ship before it exists.
+
+### Verify (Rule 17)
+`node --check` server.js OK; no leftover in-memory refs; **only server.js changed** (index.html untouched). Headless SQL (rolled-back txn, created the table + ran every route query): login INSERT + touchSession(live)→AUTH user=admin; expired→401; garbage→401; logout DELETE→1 then no-auth; cleanup reclaims expired — all PASS. (The "slide didn't advance" line was a test artifact: Postgres `NOW()` is the txn-start time, constant within one txn; in prod each request is its own auto-committed query so the 12h window genuinely slides — same as the old `validateToken`.) **Restart-survival test (the whole point) = post-deploy below.**
+
+### ⚠️ One-time behavior (told Ry)
+The deploy shipping this **logs everyone out once** — the restart wipes the old in-memory Map regardless. After that, logins persist across deploys. Pushed with Ry's go-ahead (not mid-scan).
+
+### Files
+db/migrations/0006-sessions.sql, server.js, SNAPSHOT_ROUTES.md, SNAPSHOT_SCHEMA.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No frontend change. Commit `<pending>`.
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files (Rule 39).** Next: the **Returns brief** (its migration = 0007).
+
 ## 03:27 UTC — READ-ONLY DIAGNOSTIC: no-location pick lines + returns (no code/DB/eBay writes)
 
 Architect brief: measure the proportions of the 3 causes behind "no location" pick lines before picking a fix. Briefed-from stamp `167dfd1` = matches HEAD. **READ-ONLY** — diagnostics only, no writes; throwaway scripts deleted (Rule C).

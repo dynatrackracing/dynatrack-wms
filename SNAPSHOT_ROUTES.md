@@ -5,16 +5,16 @@
 
 ## Architecture
 - Single-file Express app (`server.js`) + PostgreSQL (`pg.Pool`, `DATABASE_URL`). Serves the SPA from `public/` and all `/api/*` routes.
-- **Auth:** token-based. `POST /api/login` checks `WMS_USERNAME`/`WMS_PASSWORD` (env) and returns a random hex token held in an **in-memory `Map`** (`sessions`), 12h sliding TTL, hourly cleanup. Protected routes use `requireAuth`, which reads the **`x-wms-token`** header. *In-memory means a server restart logs everyone out.*
+- **Auth:** token-based. `POST /api/login` checks `WMS_USERNAME`/`WMS_PASSWORD` (env) and returns a random 64-char hex token. **Persisted in the `sessions` table (migration 0006, 2026-06-03) — was an in-memory Map that dropped every login on restart; now survives deploys/restarts.** 12h **sliding** TTL: `requireAuth` (and `/api/me`) call **`touchSession`** = one atomic read-and-slide `UPDATE sessions SET expires_at=NOW()+12h WHERE token=$1 AND expires_at>NOW() RETURNING username` (row → authed + window advanced; none → 401). Reads the **`x-wms-token`** header. Hourly sweep `DELETE WHERE expires_at<=NOW()`. No new env var; token stored raw. *(All auth handlers + `requireAuth` are now `async`.)*
 - **Env vars:** `PORT`, `DATABASE_URL`, `WMS_USERNAME` (default `admin`), `WMS_PASSWORD` (required — login blocked if unset). **eBay is multi-store:** per-store creds via prefixed vars `DYNATRACK_TRADING_API_{APP_NAME,CERT_NAME,DEV_NAME,TOKEN}` and `AUTOLUMEN_TRADING_API_*`. The legacy un-prefixed `TRADING_API_*` set is **IGNORED** (no fallback) — kept only as a single-store rollback safety net.
 
 ## Route table
 
 | Method | Path | Auth | Purpose / notes |
 |---|---|---|---|
-| POST | `/api/login` (75) | public | `{username,password}` → `{ok,token,username}`. 503 if `WMS_PASSWORD` unset; 401 on mismatch. |
-| POST | `/api/logout` (87) | token | Deletes the session for the supplied token. |
-| GET | `/api/me` (93) | token | `{username}` or 401. |
+| POST | `/api/login` | public | `{username,password}` → `{ok,token,username}` (unchanged shape). **INSERT into `sessions` (`expires_at=NOW()+12h`).** 503 if `WMS_PASSWORD` unset; 401 on mismatch; 500 on DB error. |
+| POST | `/api/logout` | token | `DELETE FROM sessions WHERE token=$1` → `{ok}`. |
+| GET | `/api/me` | token | `touchSession` → `{username}` or 401. |
 | GET | `/api/health` (101) | **public** | `SELECT 1` → `{ok,db,ts}`; 503 on DB failure. Railway health probe. No version stamp. |
 | GET | `/api/locations` (111) | yes | All locations, ordered by `name`. **Returns `item_count`** per location (LEFT JOIN items + GROUP BY; 0 for empty bins — added 2026-05-29). **item_count excludes archived items** (`AND i.archived_at IS NULL` — 2026-05-30 soft-archive). |
 | POST | `/api/locations` (118) | yes | `{name,type=GENERAL}`; name upper/trimmed; `ON CONFLICT(name) DO NOTHING`. |
