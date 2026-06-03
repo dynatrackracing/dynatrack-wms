@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 167dfd1 @ 2026-06-01 (Inventory Health Hide/Restore omissions, migration 0005 — applied to prod). All prior work LIVE on origin/main. Pushing this now (Rule 4).
-STAMP UPDATED BY: Claude Code, session 00:20 UTC 2026-06-01
+LAST PUSHED COMMIT: 0dd17eb @ 2026-06-03 03:30 UTC (READ-ONLY diagnostic — findings only, no code/schema/DB change). All features LIVE on origin/main unchanged.
+STAMP UPDATED BY: Claude Code, session 03:27 UTC 2026-06-03
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
