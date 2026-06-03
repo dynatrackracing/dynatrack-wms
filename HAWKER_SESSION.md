@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 0dd17eb @ 2026-06-03 03:30 UTC (READ-ONLY diagnostic — findings only, no code/schema/DB change). All features LIVE on origin/main unchanged.
-STAMP UPDATED BY: Claude Code, session 03:27 UTC 2026-06-03
+LAST PUSHED COMMIT: 288d334 @ 2026-06-03 05:14 UTC (persistent session store, migration 0006 — applied to prod). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 05:12 UTC 2026-06-03
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
@@ -37,7 +37,7 @@ Migration applied to prod FIRST (table live: token PK + 2 indexes, 0 rows) after
 The deploy shipping this **logs everyone out once** — the restart wipes the old in-memory Map regardless. After that, logins persist across deploys. Pushed with Ry's go-ahead (not mid-scan).
 
 ### Files
-db/migrations/0006-sessions.sql, server.js, SNAPSHOT_ROUTES.md, SNAPSHOT_SCHEMA.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No frontend change. Commit `<pending>`.
+db/migrations/0006-sessions.sql, server.js, SNAPSHOT_ROUTES.md, SNAPSHOT_SCHEMA.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No frontend change. Commit `288d334`.
 
 ### Memory files
 HAWKER_SESSION + HAWKER_CHANGELOG updated → **Ry: re-upload the four memory files (Rule 39).** Next: the **Returns brief** (its migration = 0007).
