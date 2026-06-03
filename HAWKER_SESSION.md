@@ -9,6 +9,33 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-03
+
+## 03:27 UTC — READ-ONLY DIAGNOSTIC: no-location pick lines + returns (no code/DB/eBay writes)
+
+Architect brief: measure the proportions of the 3 causes behind "no location" pick lines before picking a fix. Briefed-from stamp `167dfd1` = matches HEAD. **READ-ONLY** — diagnostics only, no writes; throwaway scripts deleted (Rule C).
+
+### Diagnose-first (Rule 1) — confirmed at HEAD
+`reconcileOrderLines` Phase 1: `storedByKey`= `normalizeSkuKey(serial)` over STORED-active items; `skuNorm=normalizeSkuKey(line.sku)`; cands=`storedByKey[skuNorm]` → 1 match else `location_unknown=true`/`matched_serial=null` (never guesses >1). ON CONFLICT recomputes `location_unknown`, COALESCEs `matched_serial`, never lists `ship_move_applied_at` (preserved). Phase 2 candidate carries `AND ship_move_applied_at IS NULL`. `listedSerialKeys` is frontend-only (read verbatim).
+
+### FINDINGS
+- **Step 1 — ship-once fix HOLDING:** `would_reship` (STORED-active + unstamped SHIPPED line) = **0** ✓. 5 SHIPPED lines unstamped = genuine new post-backfill ships (correct).
+- **Step 2 — ZERO no-location pick lines right now.** ebay_order_lines: SHIPPED 1881 / CANCELLED 76 / **NEEDS_PICK 16**. All 16 NEEDS_PICK are **fresh (paid Jun 2–3), matched to a STORED item, on a real shelf** — `location_unknown=TRUE` among NEEDS_PICK = 0; matched-but-null-location = 0; dangling matched_serial = 0. **`stored_but_unmatched_INVESTIGATE` = 0** (no matching bug). Suffixed single-serial SKUs (`ENG4915R`→`ENG4915`, `MOD12687V`→`MOD12687`) match fine via the trailing-letter strip.
+- **Latent mechanism footprint:** `location_unknown=TRUE` across ALL dispositions = 1749 SHIPPED + 50 CANCELLED (already-resolved, NOT picks — mostly cutover-dropped shipped serials). **Compound (whitespace) sku_raw = only 2 lines total, both SHIPPED, both junk (`"Warehouse 1V"`); 0 compound NEEDS_PICK.** So **cause 2 (multi-serial sale) is not manifesting** — no real multi-serial listing has a pending paid-unshipped sale.
+- **Step 3 — server-side `listedSerialKeys` would rescue ~0 pick lines today** (no compound NEEDS_PICK exist to resolve). It remains correct *insurance* for when a real multi-serial listing sells, but is **not currently urgent** by the numbers.
+- **Step 4 — DEFERRED: eBay API returned HTTP 503 (Service Unavailable, HTML) for both stores** (creds present, token-len 96 → transient eBay-side/rate-limit, not auth). The live listings pull + Inventory Health "Sync listings" would fail at this moment; retry later. (Reconfirms the `ebayCall` gotcha: it ignores `res.statusCode` so a 503 resolves as empty-Ack data.)
+
+### Interpretation
+The no-location pick lines Ry saw earlier were the **pre-cutover returns/strays** (ENG re-clobbers, refund strays) — now **resolved** by the ship-once fix + dismissals + orders aging out of eBay's 90-day window. The active sheet is currently clean. The real, *recurring* gap is **visibility of returns physically on shelves** (the 69 pre-cutover SHIPPED-on-shelf items; items that are `status=SHIPPED` but actually back in a bin) — invisible today, and they reseed no-location picks / eBay-Only inflation when relisted.
+
+### Recommendation (architect chooses one)
+1. **`RETURNED` disposition at scan-back + a Returns view (lead recommendation).** Addresses the live pain — return visibility for the 69 + future returns — which the numbers say dominates. Ship-once stopped the re-ship; this surfaces "SHIPPED item is back on a shelf."
+2. **Mirror `listedSerialKeys` server-side** — correct insurance but rescues ~0 today (defer until a multi-serial sale actually lands, or do opportunistically).
+3. Re-run **Step 4** once eBay's 503 clears, to quantify eBay-Only relisted-return inflation + overlap with the 69 (informs #1's priority list).
+
+### Files
+HAWKER_SESSION.md + HAWKER_CHANGELOG.md only (findings record). No code/schema/DB/eBay writes. → **Ry: re-upload memory files (Rule 39).**
+
 # 2026-06-01
 
 ## 00:20 UTC — Inventory Health: Hide/Restore omissions for eBay-Only + WMS-Only (persisted)
