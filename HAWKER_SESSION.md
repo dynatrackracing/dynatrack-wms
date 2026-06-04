@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 68d6eb2 @ 2026-06-04 18:40 UTC (move-endpoint status-clobber fix — status now follows destination TYPE; 16 sold-shipped phantoms remediated STORED→SHIPPED; code live at 8043ae0). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 18:40 UTC 2026-06-04
+LAST PUSHED COMMIT: 06b21ed @ 2026-06-04 19:12 UTC (SKU normalization strips a trailing "*" — normalizeSkuKey `/[A-Z*]+$/`, byte-identical in both copies; no DB write, no schema change). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 19:05 UTC 2026-06-04
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
