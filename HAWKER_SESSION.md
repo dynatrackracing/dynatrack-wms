@@ -9,6 +9,45 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-04
+
+## 18:40 UTC — Fix: move endpoints clobber status to STORED at the SHIPPED location (phantom inventory / oversell) + remediate 16 sold-shipped phantoms
+
+**Single deliverable, prioritized AHEAD of the Returns build (live, recurring daily).** server.js (both move handlers) + public/index.html (Confirm preview) + a gated one-off remediation UPDATE. **No schema migration** (Rule 9 n/a). eBay read-only (Rule 25); no new status (Rule 11). Briefed-from `0dd17eb @ 03:30 UTC`; true HEAD at start `585b660`, pulled ff-only, built against it.
+
+### The bug (root cause, confirmed in code)
+`/api/move` (server.js:306) and `/api/move/batch` (server.js:387) hardcoded `status='STORED'` on EVERY move — including into the front-door **SHIPPED** location. Staff scan sold/outbound items to SHIPPED as normal daily work, so the endpoint silently flipped them back to active inventory → Inventory Health + pick-matching counted them available (phantom / oversell). Per Ry, the SHIPPED location is the physical front-door staging area where the mailman collects: an item there is sold/outbound = present but NOT available, so status there must be SHIPPED.
+
+### Step 0 (read-only, reported before any change)
+- **Type-casing correction to the brief:** the shipped location is stored `name='SHIPPED', type='SHIPPED'` (UPPERCASE) — the brief's assumed `type='shipped'` would have no-op'd. Fix matches case-insensitively (`UPPER(type)='SHIPPED'`), type-based (rename-robust). Location types: SHELF_BIN 526 / UNLISTED_TOTE 21 / SHIPPED 1.
+- **Exposure:** 25 `status='STORED'` at the SHIPPED location = **16** with a matched `ebay_order_lines disposition='SHIPPED'` (sold+shipped) + **9** without. 0 divergence (type- and name-based select the same single location).
+- **Oversell (eBay back up — Dynatrack 3,355 / AutoLumen 543 listings):** of the 16, **1 actively listed available>0 = MOD20606 (dynatrack, avail 1)** = imminent double-sell; 15 listed but sold-out (avail 0); 0 not listed.
+- **All status writers:** the two move endpoints are the only paths that silently force the wrong status on a normal scan-to-SHIPPED. (reconcile Phase 2 @999 correctly sets SHIPPED; `/api/intake`@344 hardcodes STORED but new-items-only — flagged Rule B; `POST /api/items`@206 / `PATCH /api/items/:serial`@219 set status explicitly = admin paths.)
+
+### The fix (status follows destination TYPE)
+Both move endpoints now ensure the destination location row exists, read its `type`, set `destStatus = UPPER(type)='SHIPPED' ? 'SHIPPED' : 'STORED'`, applied to both insert + update paths (single: server.js ~300–313; batch: computed once before the loop, applied to existing-UPDATE + new-INSERT). Returns-revert preserved automatically (shelf dest → STORED). **public/index.html `goToConfirm`:** destination-aware Confirm preview — `destIsShipped` (from `scanLocations` type) shows items will be marked SHIPPED (sold/outbound, not available) + per-row `(→ SHIPPED · staged at front door)`; a shelf dest keeps `(was shipped → back to STORED)`. **SHIPPED stays a selectable destination** (Ry deliberately scans outbound items there) — fixed the status, not the picker.
+
+### Remediation (gated: dry-run → Ry Railway snapshot + go-ahead → --commit)
+`UPDATE items SET status='SHIPPED'` for the 16 STORED-at-SHIPPED with a matched SHIPPED line. **NO moves rows** (Ry's call — `moves` stays a physical-movement log; consistent with the ship-once / intake_date backfills; remediation recorded HERE instead). **The 16:** CLU0815, ECU0539, ENG5006, INT2999, INT4232, INT4356, INT4839, MOD13389, MOD13610, MOD13738, MOD14214, MOD18366, MOD18579, MOD20606, MOD20635, MOD20656. Dry-run (BEGIN…ROLLBACK) → 16 updated, after 0 matched / 9 untouched; committed after snapshot + go-ahead → **live: 16 updated, 0 matched STORED@SHIPPED remaining, 9 untouched.**
+
+### ⚠️ Handoffs to Ry (cross-boundary, not Claude Code)
+- **MOD20606's eBay listing is still LIVE (dynatrack, avail 1).** The WMS status fix removes it from available WMS stock but does NOT touch eBay (Rule 25). **End/correct that listing in Seller Hub** or it can still be bought while the unit is gone.
+- **The 9 unmatched (left untouched — Ry triage):** 001697, ENG4125, FUS2334, MOD15864, MOD16285, MOD18907, MOD18989, MOD19009, MOD19488 — each scanned shelf→SHIPPED (dynatrack, Jun 1–4), no matched SHIPPED order line; reconcile won't auto-fix (Phase 2 needs a matched line). With the fix deployed, re-scan to correct: to a shelf → STORED (mis-scan / back in stock), or leave at SHIPPED → stays SHIPPED (sold-not-yet-reconciled).
+
+### Verify (Rule 17)
+`node --check` server.js OK. Endpoint behavior (rolled-back txn on real serial 000002): → SHIPPED location ⇒ SHIPPED@SHIPPED; → shelf HR01S01 ⇒ STORED@HR01S01. Remediation post-write: 0 matched STORED@SHIPPED, 9 unmatched untouched. `/api/health` 200 (db connected) post-deploy. index.html edits live inside runtime-generated JS strings → static `.page`/div structure unchanged.
+
+### Files / commits
+server.js, public/index.html → commit `8043ae0` (pushed FIRST → Railway auto-deploy). SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md → session-end commit. No schema change.
+
+### Deferred / Rule B
+- The SHIPPED location carrying two meanings (logical "gone" vs physical front-door staging) under one name is the conceptual root — a future `OUTBOUND`/`FRONT_DOOR` location or a `STAGED` status is a separate design decision, not now.
+- `/api/intake` also hardcodes STORED (new-items-only) — same class, not implicated; flagged.
+- **Returns build (migration 0007) resumes next.**
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG + SNAPSHOT_ROUTES + SNAPSHOT_FRONTEND updated → **Ry: re-upload the four memory files (Rule 39).**
+
 # 2026-06-03
 
 ## 05:12 UTC — Persistent session store: logins survive deploys/restarts (DB-backed sessions, migration 0006)
