@@ -11,6 +11,27 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-06-04
 
+## 19:05 UTC — SKU normalization: strip a trailing "*" (and letter+"*" combos) so *-suffixed serials match (Rule 8)
+
+**Single deliverable** (scope-guarded — NOT the rack/Locations work, that's a separate session; Rules A/2). Byte-identical one-char regex change in BOTH `normalizeSkuKey` copies + snapshot/doc updates. No schema change; eBay read-only (Rule 25); no DB write. HEAD at start `085881f` (stamp → 68d6eb2).
+
+### Diagnose-first (Rule 1, read-only)
+- Both `normalizeSkuKey` bodies use the identical `.replace(/[A-Z]+$/,'')` (server.js:854 param `s`; index.html:1850 param `sku` — logic identical, which is the Rule-8 requirement; only the param name differs).
+- `reconcileOrderLines` Phase-1 upsert sets `sku_norm = EXCLUDED.sku_norm` (NOT COALESCE) → recomputed fresh on every upsert → **no backfill needed** (a normal orders re-sync recomputes old rows). Caveat: only lines re-fetched within eBay's ~90-day window refresh — older `*` rows (mostly already-SHIPPED) keep a stale `sku_norm` until then; the gated backfill (`UPDATE … SET sku_norm = NULLIF(regexp_replace(upper(btrim(sku_raw)),'[A-Z*]+$',''),'') WHERE sku_raw LIKE '%*%'`) is available if Ry wants the 28 normalized immediately — NOT run this session.
+- **`items` carrying `*`: 0** — no WMS serials carry `*` today, so zero current WMS-Only false-unmatch; the change is forward-correct hardening. **`ebay_order_lines.sku_raw` carrying `*`: 28 rows / 25 distinct** (e.g. `ENG4007V*`, `INT4366R*`, `MOD17984*`, `INT3980V**`, `MOD18527V*`, `MOD19488R*`); the trailing-`*` single-serial ones now normalize correctly (the `*` previously blocked the trailing-letter strip). Mid-string `*` (e.g. `CLU0859R*/007511`, `MOD16175* MOD12954`) is the internal-id/multi-serial form handled by the frontend `listedSerialKeys` — out of scope, unchanged.
+
+### The change
+`normalizeSkuKey`: `/[A-Z]+$/` → `/[A-Z*]+$/` in **public/index.html AND server.js** (byte-identical regex). Strips any trailing run of letters and/or `*` (`V`, `R`, `*`, `V*`, `R*`, `*R`, `**`) to the bare serial; digit-terminated serials and hyphenated/numeric junk (`MOD-20359`, `000002`) untouched, so `isIncompleteKey` still catches real junk.
+
+### Verify (Rule 17)
+`node --check` server.js OK. Normalizer spot-check (new regex): `INT4306V*` / `INT4306*` / `INT4306R*` / `INT4306R` / `INT4306` / `INT3980V**` → bare (`INT4306` / `INT3980`); `MOD-20359` & `000002` unchanged; `"MOD16175* MOD12954"` left whole (multi-serial → `listedSerialKeys`). `/api/health` 200 post-deploy.
+
+### Files
+server.js, public/index.html, SNAPSHOT_ROUTES.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema change, no DB write (backfill not needed — fresh recompute on re-sync).
+
+### Memory files
+HAWKER_SESSION + HAWKER_CHANGELOG (+ SNAPSHOT_ROUTES/FRONTEND) updated → **Ry: re-upload the four memory files (Rule 39).**
+
 ## 18:40 UTC — Fix: move endpoints clobber status to STORED at the SHIPPED location (phantom inventory / oversell) + remediate 16 sold-shipped phantoms
 
 **Single deliverable, prioritized AHEAD of the Returns build (live, recurring daily).** server.js (both move handlers) + public/index.html (Confirm preview) + a gated one-off remediation UPDATE. **No schema migration** (Rule 9 n/a). eBay read-only (Rule 25); no new status (Rule 11). Briefed-from `0dd17eb @ 03:30 UTC`; true HEAD at start `585b660`, pulled ff-only, built against it.

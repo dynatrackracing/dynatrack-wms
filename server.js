@@ -851,7 +851,7 @@ app.get('/api/ebay/:store/orders', requireAuth, async (req, res) => {
 // multi-serial pick/ship work lands (a sold unit of a multi-serial listing can't be attributed to
 // one physical serial without scan-verify, #21), mirror `listedSerialKeys` here byte-identical.
 function normalizeSkuKey(s) {
-  return (s || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
+  return (s || '').trim().toUpperCase().replace(/[A-Z*]+$/, '');
 }
 
 // ── eBay order-line reconcile ───────────────────────────────────────────────────

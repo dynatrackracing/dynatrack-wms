@@ -1847,7 +1847,7 @@ var healthStatic   = {};          // omission-independent card figures (wmsItems
 // stripped/skipped. NOTE: when the PARKED order-reconcile multi-serial work lands, mirror
 // listedSerialKeys into server.js byte-identical (see the normalizeSkuKey note there).
 function normalizeSkuKey(sku) {
-  return (sku || '').trim().toUpperCase().replace(/[A-Z]+$/, '');
+  return (sku || '').trim().toUpperCase().replace(/[A-Z*]+$/, '');
 }
 function listedSerialKeys(field) {
   var STORE_TAGS = { AUTOLUMEN: 1, DYNATRACK: 1, AUTOLUMENA: 1 };
