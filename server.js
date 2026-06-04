@@ -298,14 +298,22 @@ app.post('/api/move', requireAuth, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Ensure the destination exists (a newly scanned code defaults to SHELF_BIN), then derive the
+    // item's status from the destination's TYPE: a shipped-type location is the front-door outbound
+    // staging area — an item there is sold/outbound, present but NOT available → SHIPPED. Any
+    // shelf/tote → STORED. Type-based (not name-based) so renaming the location can't reintroduce the
+    // clobber; case-insensitive since the type is stored 'SHIPPED'. This also makes the return-revert
+    // correct: scanning a shipped item back to a real shelf flips it to STORED (a returns candidate).
+    await client.query('INSERT INTO locations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [to_location]);
+    const { rows: destRows } = await client.query('SELECT type FROM locations WHERE name = $1', [to_location]);
+    const destStatus = (destRows[0] && String(destRows[0].type).toUpperCase() === 'SHIPPED') ? 'SHIPPED' : 'STORED';
     const { rows: itemRows } = await client.query('SELECT * FROM items WHERE serial = $1', [serial]);
     const item = itemRows[0];
     if (!item) {
-      await client.query('INSERT INTO items (serial, status, location) VALUES ($1, $2, $3)', [serial, 'STORED', to_location]);
+      await client.query('INSERT INTO items (serial, status, location) VALUES ($1, $2, $3)', [serial, destStatus, to_location]);
     } else {
-      await client.query('UPDATE items SET location = $1, status = $2 WHERE serial = $3', [to_location, 'STORED', serial]);
+      await client.query('UPDATE items SET location = $1, status = $2 WHERE serial = $3', [to_location, destStatus, serial]);
     }
-    await client.query('INSERT INTO locations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [to_location]);
     const { rows: moveRows } = await client.query(
       `INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, $3, $4) RETURNING *`,
       [serial, item?.location || null, to_location, moved_by]
@@ -380,11 +388,15 @@ app.post('/api/move/batch', requireAuth, async (req, res) => {
   try {
     await client.query('BEGIN');
     await client.query('INSERT INTO locations (name) VALUES ($1) ON CONFLICT (name) DO NOTHING', [loc]);
+    // Status follows the destination's TYPE (same rule as /api/move): a shipped-type location is the
+    // front-door outbound staging area → SHIPPED (sold/outbound, not available); any shelf/tote → STORED.
+    const { rows: destRows } = await client.query('SELECT type FROM locations WHERE name = $1', [loc]);
+    const destStatus = (destRows[0] && String(destRows[0].type).toUpperCase() === 'SHIPPED') ? 'SHIPPED' : 'STORED';
     let moved = 0, created = 0;
     for (const serial of list) {
       const { rows } = await client.query('SELECT location FROM items WHERE serial = $1', [serial]);
       if (rows.length) {
-        await client.query("UPDATE items SET status = 'STORED', location = $1 WHERE serial = $2", [loc, serial]);
+        await client.query("UPDATE items SET status = $1, location = $2 WHERE serial = $3", [destStatus, loc, serial]);
         await client.query(
           "INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, $3, $4)",
           [serial, rows[0].location || null, loc, moved_by]
@@ -392,8 +404,8 @@ app.post('/api/move/batch', requireAuth, async (req, res) => {
         moved++;
       } else {
         await client.query(
-          `INSERT INTO items (serial, status, location, intake_date) VALUES ($1, 'STORED', $2, COALESCE($3::date, CURRENT_DATE))`,
-          [serial, loc, intake_date || null]
+          `INSERT INTO items (serial, status, location, intake_date) VALUES ($1, $2, $3, COALESCE($4::date, CURRENT_DATE))`,
+          [serial, destStatus, loc, intake_date || null]
         );
         await client.query(
           "INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, NULL, $2, 'intake')",

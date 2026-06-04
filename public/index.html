@@ -1102,9 +1102,16 @@ function goToConfirm() {
   if (!selectedLocName) { showToast('Scan or select a destination', true); return; }
   var created  = batch.filter(function(b){ return b.isNew; });
   var existing = batch.filter(function(b){ return !b.isNew; });
+  // Destination-aware preview: a shipped-type location is the front-door outbound staging area, so the
+  // batch will mark items SHIPPED (sold/outbound, not available) — NOT "back to STORED". Mirror the
+  // server's type-based rule so the operator isn't misled into thinking they're returning stock to a shelf.
+  var destLoc = scanLocations.find(function(l){ return l.name === selectedLocName; });
+  var destIsShipped = !!(destLoc && String(destLoc.type).toUpperCase() === 'SHIPPED');
   var html = '<div class="card" style="margin-bottom:12px">'
     + '<div style="font-size:14px;font-weight:600">Move ' + existing.length + ' existing, create ' + created.length + ' new → <span class="mono" style="color:var(--brand)">' + selectedLocName + '</span></div>'
-    + '<div style="font-size:12px;color:var(--muted);margin-top:4px">New items will be stamped intake date <span class="mono">' + workingDate + '</span></div></div>';
+    + '<div style="font-size:12px;color:var(--muted);margin-top:4px">New items will be stamped intake date <span class="mono">' + workingDate + '</span></div>'
+    + (destIsShipped ? '<div style="font-size:12px;color:var(--warn);font-weight:600;margin-top:6px">Front-door SHIPPED staging — these items will be marked <strong>SHIPPED</strong> (sold/outbound, removed from available stock), not added to shelf inventory.</div>' : '')
+    + '</div>';
   if (created.length) {
     html += '<div style="font-size:12px;font-weight:600;margin-bottom:6px">New items to create (' + created.length + ') — review before they exist:</div>'
       + '<div class="card" style="margin-bottom:12px"><div class="tw"><table><tbody>'
@@ -1115,6 +1122,7 @@ function goToConfirm() {
     + '<div class="card"><div class="tw"><table><tbody>'
     + batch.map(function(b){
         var note = b.isNew ? ' <span class="badge bg-w">NEW</span>'
+          : destIsShipped ? ' <span style="color:var(--warn);font-size:11px">(→ SHIPPED · staged at front door)</span>'
           : (b.status === 'SHIPPED' ? ' <span style="color:var(--warn);font-size:11px">(was shipped → back to STORED)</span>' : '');
         return '<tr><td class="mono">' + b.serial + note + '</td></tr>';
       }).join('')
