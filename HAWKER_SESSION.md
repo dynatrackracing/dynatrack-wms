@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 288d334 @ 2026-06-03 05:14 UTC (persistent session store, migration 0006 — applied to prod). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 05:12 UTC 2026-06-03
+LAST PUSHED COMMIT: 68d6eb2 @ 2026-06-04 18:40 UTC (move-endpoint status-clobber fix — status now follows destination TYPE; 16 sold-shipped phantoms remediated STORED→SHIPPED; code live at 8043ae0). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 18:40 UTC 2026-06-04
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
