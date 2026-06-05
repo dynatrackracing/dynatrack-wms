@@ -9,6 +9,45 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-05
+
+## 23:36 UTC — Locations → racks: migration 0007 (scoped SHELF_BIN→RACK) + Locations page Section→Rack→Shelf navigation
+
+**Single deliverable** (scope-guarded — NOT the SKU normalizer [done]; NO renames beyond the 9 approved; NO totes/shelves dashboard split; NO add-location default change — all FLAGGED only; Rules A/2). Migration 0007 (gated data write) + public/index.html (Locations rework + RACK label/badge). **server.js untouched** (no SNAPSHOT_ROUTES regen). HEAD at start `6f19eb6`.
+
+### Diagnose-first (Rule 1, read-only)
+- Every `SHELF_BIN` reference (6): index.html `locTypeLabel`:1260 / `locTypeBadge`:1266 → **UPDATED** (teach RACK); `db/schema.sql:7` DEFAULT → **FLAG** (seed not edited, rule 9/28); add-location selects index.html:446/:617 + `server.js:301` auto-create comment → **FLAG** (add-location default unchanged, still SHELF_BIN).
+- Move-status invariant **verified**: `/api/move`:309 + `/api/move/batch`:394 both `destStatus = UPPER(type)='SHIPPED' ? 'SHIPPED' : 'STORED'` (STORED default) → RACK → STORED. Migration can't break status.
+- Name shapes (526 SHELF_BIN): 481 compact `^[A-Z]R\d\dS\d\d$` (sections B,C,D,E,F,G,H,I,J,O — no A), 9 spelled-out "O Rack NN Shelf NN" (all section O), 36 malformed → Other.
+- `buildZoneTabs` keys on TYPE not section → grouping is new in `renderLocGrid`.
+
+### Migration 0007 (db/migrations/0007-rack-type.sql — GATED dry-run → Ry Railway snapshot + go-ahead → applied), THREE scoped ops in one txn:
+1. **DELETE** `'Rack 01 shelf'` (verified 0 items reference it — no FK orphan) → 1 row.
+2. **RENAME** the 9 spelled-out section-O names → compact (`OR01S02 … OR02S05`); all section O, 0 collisions. `items.location` ON UPDATE CASCADE follows; `moves` untouched (Rule 13).
+3. **CONVERT** rack-pattern only: `UPDATE locations SET type='RACK' WHERE type='SHELF_BIN' AND name ~ '^[A-Z]R[0-9]{2}S[0-9]{2}$'` → 490 rows. The 35 non-rack oddballs (BIN 01-26, FAN, ESECTA/B/C, RYR0001-4, CR03A02) stay SHELF_BIN BY DESIGN (Ry).
+Applied (guards re-asserted before COMMIT): deleted 1, renamed 9, typed 490. Live: **RACK 490 / SHELF_BIN 35 / UNLISTED_TOTE 21 / SHIPPED 1 = 547** (down from 548). Reversible (re-create bin, un-rename 9, type RACK→SHELF_BIN).
+
+### Frontend (public/index.html)
+- `locTypeLabel`/`locTypeBadge` learn **RACK** (green `bg-s`, "RACK"); SHELF_BIN keeps "SHELF BIN".
+- `renderLocGrid` reworked: **`parseRackName`** (compact + spelled-out → section/rack/shelf), **`locRowHtml(l,label)`** (derived "Shelf N" + real scannable name mono), grouping **Section → Rack → Shelf** (S01 top → S05 bottom) with colspan band headers + an **"Other / Ungrouped"** group. Search filters before grouping; `openLocationDetail` still uses the real name.
+
+### ⚠️ Data surprise (FLAG, not fixed): rack-NAMED totes
+20 locations named `AR01S01`–`AR04S05` are type **UNLISTED_TOTE**, not shelves (why compact SHELF_BIN sections were B–J,O with no A). **Grouping is gated on `type==='RACK'`** so these stay in **Other** with a TOTE badge (per the brief: totes → Other), NOT mislabeled as a rack "Section A". Decision for Ry: leave as totes-in-Other, or reclassify/rename.
+
+### Verify (Rule 17)
+`node --check` server.js OK (untouched); **div balance 343/343 unchanged** (edits are runtime JS strings); inline JS parses. Type-gated grouping sim vs live data: 490 grouped — B(11r/55) C(3/15) D(2/10) E(2/10) F(18/90) G(19/95) H(25/125) I(13/65) J(3/15) O(2/10) = 490; Other 57 (UNLISTED_TOTE 21 incl. the 20 AR-totes, SHELF_BIN 35, SHIPPED 1). Section O = 2 racks × 5 shelves (compact + renamed merged). RACK→STORED scan check (rolled back, serial 000002 → BR01S01) = STORED ✓. `/api/health` 200 post-deploy. Visual render = Ry's tablet check.
+
+### Flags / deferred (Rule B)
+- `schema.sql` DEFAULT `'SHELF_BIN'` + add-location selects (446/617) + auto-create-on-scan (server.js:307) still produce SHELF_BIN for NEW locations — inconsistent with the RACK convention now; whether the new-location default should become RACK = open decision (not changed).
+- The 20 rack-named UNLISTED_TOTE (Section A) — above.
+- No renames beyond the 9 approved; no totes/shelves dashboard split.
+
+### Files
+db/migrations/0007-rack-type.sql, public/index.html, HAWKER_RULES.md (rule 27), SNAPSHOT_SCHEMA.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. server.js untouched.
+
+### Memory files
+HAWKER_RULES + HAWKER_SESSION + HAWKER_CHANGELOG (+ SNAPSHOT_SCHEMA/FRONTEND) updated → **Ry: re-upload the four memory files (Rule 39).**
+
 # 2026-06-04
 
 ## 19:05 UTC — SKU normalization: strip a trailing "*" (and letter+"*" combos) so *-suffixed serials match (Rule 8)

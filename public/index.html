@@ -1257,17 +1257,39 @@ function filterLocGrid(v) { locSearch = v.toLowerCase(); renderLocGrid(); }
 
 // Map locations.type → a clean display label / badge (SHELF BIN / TOTE / SHIPPED / raw).
 function locTypeLabel(t) {
+  if (t === 'RACK') return 'RACK';
   if (t === 'SHELF_BIN') return 'SHELF BIN';
   if (t === 'UNLISTED_TOTE' || t === 'RETURNS_TOTE') return 'TOTE';
   if (t === 'SHIPPED') return 'SHIPPED';
   return t || '—';
 }
 function locTypeBadge(t) {
-  var cls = t === 'SHIPPED' ? 'bg-m' : (t === 'UNLISTED_TOTE' || t === 'RETURNS_TOTE') ? 'bg-p' : t === 'SHELF_BIN' ? 'bg-s' : 'bg-w';
+  var cls = t === 'SHIPPED' ? 'bg-m' : (t === 'UNLISTED_TOTE' || t === 'RETURNS_TOTE') ? 'bg-p' : (t === 'SHELF_BIN' || t === 'RACK') ? 'bg-s' : 'bg-w';
   return '<span class="badge ' + cls + '">' + locTypeLabel(t) + '</span>';
 }
 
-// Name · Type · Items · View list (replaces the old card grid; name kept per Rule D).
+// Name · Type · Items · View. Rack-pattern locations group Section → Rack → Shelf (S01 top → S05 bottom,
+// 2026-06-05). Parses BOTH the compact (AR01S01) and spelled-out ("O Rack 01 Shelf 02") shapes to the
+// same (section,rack,shelf) — belt-and-suspenders post-rename. Non-rack locations (oddball SHELF_BIN,
+// totes, shipped) fall to an "Other / Ungrouped" group, never dropped. The displayed shelf label is
+// derived; the real (scannable / FK) name is kept and openLocationDetail still uses it (Rule D).
+function parseRackName(name) {
+  var s = (name || '').trim();
+  var m = s.match(/^([A-Z])R(\d{2})S(\d{2})$/i) || s.match(/^([A-Z])\s+RACK\s+(\d+)\s+SHELF\s+(\d+)$/i);
+  if (!m) return null;
+  return { section: m[1].toUpperCase(), rack: parseInt(m[2], 10), shelf: parseInt(m[3], 10) };
+}
+function locRowHtml(l, label) {
+  var n = l.name.replace(/'/g, "\\'");
+  var nameCell = label
+    ? '<span style="color:var(--text);font-weight:600">' + label + '</span> <span class="mono" style="color:var(--muted);font-size:11px">' + l.name + '</span>'
+    : '<span class="mono" style="color:var(--text)">' + l.name + '</span>';
+  return '<tr style="cursor:pointer" onclick="openLocationDetail(\'' + n + '\')">'
+    + '<td>' + nameCell + '</td>'
+    + '<td>' + locTypeBadge(l.type) + '</td>'
+    + '<td class="mono">' + (l.item_count != null ? l.item_count : '–') + '</td>'
+    + '<td><a href="#" onclick="event.stopPropagation();openLocationDetail(\'' + n + '\');return false" style="color:var(--brand);text-decoration:none;font-size:12px">View →</a></td></tr>';
+}
 function renderLocGrid() {
   var data = allLocations;
   if (locZone !== 'all') data = data.filter(function(l){ return l.type === locZone; });
@@ -1275,16 +1297,48 @@ function renderLocGrid() {
   var el = document.getElementById('loc-grid');
   el.style.display = 'block';  // override the .lg grid — this is a table now
   if (!data.length) { el.innerHTML = '<div class="loading">No locations found</div>'; return; }
+
+  // Split RACK-type locations (grouped Section→Rack→Shelf) from everything else (Other).
+  // Gate on type==='RACK' — not just the name pattern — so rack-NAMED non-racks (e.g. UNLISTED_TOTE
+  // bins named AR01S01) stay in Other with their real badge, per the brief (totes/shipped/oddball
+  // SHELF_BIN → Other). A RACK whose name somehow doesn't parse also falls to Other (defensive).
+  var sections = {}, other = [];
+  data.forEach(function(l) {
+    var p = l.type === 'RACK' ? parseRackName(l.name) : null;
+    if (!p) { other.push(l); return; }
+    if (!sections[p.section]) sections[p.section] = {};
+    if (!sections[p.section][p.rack]) sections[p.section][p.rack] = [];
+    sections[p.section][p.rack].push({ loc: l, shelf: p.shelf });
+  });
+
+  function headerRow(txt, lvl) {
+    var style = lvl === 1
+      ? 'background:var(--bg3);border-left:4px solid var(--brand);padding:9px 14px;font-weight:700;color:var(--text)'
+      : 'background:var(--bg2);border-left:4px solid var(--bh);padding:6px 14px 6px 26px;font-weight:600;color:var(--text2);font-size:13px';
+    return '<tr><td colspan="4" style="' + style + '">' + txt + '</td></tr>';
+  }
+
+  var html = '';
+  Object.keys(sections).sort().forEach(function(sec) {
+    var racks = sections[sec];
+    var rackNums = Object.keys(racks).map(Number).sort(function(a, b){ return a - b; });
+    var secCount = rackNums.reduce(function(a, r){ return a + racks[r].length; }, 0);
+    html += headerRow('Section ' + sec + ' <span style="color:var(--muted);font-weight:600">(' + secCount + ' shelf' + (secCount === 1 ? '' : 'ves') + ')</span>', 1);
+    rackNums.forEach(function(rn) {
+      html += headerRow('Rack ' + (rn < 10 ? '0' + rn : rn), 2);
+      racks[rn].sort(function(a, b){ return a.shelf - b.shelf; }).forEach(function(x) {
+        html += locRowHtml(x.loc, 'Shelf ' + x.shelf);
+      });
+    });
+  });
+  if (other.length) {
+    html += headerRow('Other / Ungrouped <span style="color:var(--muted);font-weight:600">(' + other.length + ')</span>', 1);
+    other.sort(function(a, b){ return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); }).forEach(function(l){ html += locRowHtml(l, null); });
+  }
+
   el.innerHTML = '<div class="card"><div class="tw"><table>'
-    + '<thead><tr><th>Name</th><th>Type</th><th>Items</th><th></th></tr></thead><tbody>'
-    + data.map(function(l) {
-        var n = l.name.replace(/'/g, "\\'");
-        return '<tr style="cursor:pointer" onclick="openLocationDetail(\'' + n + '\')">'
-          + '<td class="mono" style="color:var(--text)">' + l.name + '</td>'
-          + '<td>' + locTypeBadge(l.type) + '</td>'
-          + '<td class="mono">' + (l.item_count != null ? l.item_count : '–') + '</td>'
-          + '<td><a href="#" onclick="event.stopPropagation();openLocationDetail(\'' + n + '\');return false" style="color:var(--brand);text-decoration:none;font-size:12px">View →</a></td></tr>';
-      }).join('')
+    + '<thead><tr><th>Name / Shelf</th><th>Type</th><th>Items</th><th></th></tr></thead><tbody>'
+    + html
     + '</tbody></table></div></div>';
 }
 

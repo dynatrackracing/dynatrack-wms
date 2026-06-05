@@ -2,7 +2,7 @@
 
 > Orientation map of the database. Regenerate at session end if `db/schema.sql` or a `db/migrations/` file changed (HAWKER_RULES rule 38).
 > Generated 2026-05-29 from `db/schema.sql` **+ applied migrations in `db/migrations/`**. PostgreSQL (Railway).
-> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31), **`0006-sessions.sql`** (2026-06-03).
+> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31), **`0006-sessions.sql`** (2026-06-03), **`0007-rack-type.sql`** (2026-06-05 — rack-pattern SHELF_BIN → RACK + delete 1 malformed bin + rename 9 spelled-out section-O names to compact).
 
 ## Tables
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | `id` | SERIAL PK | |
 | `name` | TEXT NOT NULL **UNIQUE** | the human/barcode location code; referenced by `items.location` |
-| `type` | TEXT NOT NULL DEFAULT `'SHELF_BIN'` | values seen: SHELF_BIN, UNLISTED_TOTE, RETURNS_TOTE, GENERAL, FREEZER, AMBIENT, STAGING |
+| `type` | TEXT NOT NULL DEFAULT `'SHELF_BIN'` | values seen: **RACK** (2026-06-05 migration 0007 — the rack shelves, 490), SHELF_BIN (now only non-rack oddballs: BIN 01-26, FAN, ESECTA/B/C, RYR0001-4, CR03A02), UNLISTED_TOTE, RETURNS_TOTE, GENERAL, FREEZER, AMBIENT, STAGING. No CHECK constraint. ⚠️ schema **DEFAULT stays `'SHELF_BIN'`** (seed NOT edited, rule 9/28) — new-DB / auto-created-on-scan locations still default SHELF_BIN; whether it should become RACK is an open flag. |
 | `created_at` | TIMESTAMPTZ DEFAULT NOW() | |
 
 ### `items`
@@ -112,4 +112,4 @@ Persistent auth tokens — **replaced the in-memory `sessions` Map** in server.j
 - No Supabase anywhere (rule 7). DB is Railway Postgres via `DATABASE_URL`.
 
 ## Production data baseline (as of 2026-05-31 CUTOVER, rule 27)
-**548 locations** (526 SHELF_BIN + 21 UNLISTED_TOTE + 1 empty SHIPPED) · **3,390 items** (all `status='STORED'`, `archived_at` NULL; **`intake_date` backfilled 2026-05-31** from the extract's `createdAt` — was NULL at cutover) · **3,390 moves** (all `moved_by='import-baseline'`) · 12 sequences (vestigial) · `ebay_order_lines` empty until the first post-cutover eBay sync. Live-inventory-only baseline (shipped items dropped — eBay/ShippingEasy own shipped now). Drastically different counts in a session = investigate before changing anything. *(Prior baseline 2026-04-02: 537 loc / 3,380 items / 3,969 moves — superseded by the cutover reload.)*
+**547 locations** (490 RACK + 35 SHELF_BIN + 21 UNLISTED_TOTE + 1 SHIPPED — migration 0007 2026-06-05: rack-pattern SHELF_BIN→RACK, 1 malformed bin deleted, 9 section-O names renamed to compact) · **3,390 items** (all `status='STORED'`, `archived_at` NULL; **`intake_date` backfilled 2026-05-31** from the extract's `createdAt` — was NULL at cutover) · **3,390 moves** (all `moved_by='import-baseline'`) · 12 sequences (vestigial) · `ebay_order_lines` empty until the first post-cutover eBay sync. Live-inventory-only baseline (shipped items dropped — eBay/ShippingEasy own shipped now). Drastically different counts in a session = investigate before changing anything. *(Prior baseline 2026-04-02: 537 loc / 3,380 items / 3,969 moves — superseded by the cutover reload.)*
