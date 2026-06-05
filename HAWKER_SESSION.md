@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 06b21ed @ 2026-06-04 19:12 UTC (SKU normalization strips a trailing "*" — normalizeSkuKey `/[A-Z*]+$/`, byte-identical in both copies; no DB write, no schema change). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 19:05 UTC 2026-06-04
+LAST PUSHED COMMIT: 70f4dee @ 2026-06-05 23:38 UTC (migration 0007: rack-pattern shelf bins → RACK [490], 1 malformed bin deleted, 9 section-O names renamed to compact; Locations page now groups Section → Rack → Shelf. Baseline 547 = 490 RACK + 35 SHELF_BIN + 21 UNLISTED_TOTE + 1 SHIPPED). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 23:36 UTC 2026-06-05
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
