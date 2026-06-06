@@ -11,6 +11,32 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-06-06
 
+## 00:47 UTC — Harden Decommission/Scrap confirm against accidental taps (frontend only)
+
+**Single deliverable, FRONTEND ONLY** (public/index.html). No new entry point, no scan-to-scrap, no server/schema/route change — `POST /api/items/:serial/archive` + the `archived_at` soft-archive are unchanged. No snapshot gate (presentation; the archive action is unchanged + reversible). HEAD at start `1d4dbf5`.
+
+### Diagnose-first (Rule 1, read-only)
+- `archiveItem` used a single `prompt()` for an *optional* reason → one accidental tap on the err-outlined footer button + Enter would archive. `unarchiveItem`/Restore are separate. Route `POST /api/items/:serial/archive` takes `{reason,moved_by}` (server.js:241) — **contract kept**.
+- Modal pattern: `openModal`/`closeModal` toggle `.open`; one backdrop-click handler binds every `.modal-bg` at load; modals stack by DOM order (z-index 200) — `#modal-location-detail` is before `#modal-item-history` so history stacks on top → the new confirm modal must sit **AFTER** item-history (+ `z-index:210`) to stack above it.
+
+### Built (public/index.html)
+- New **`#modal-decommission`** (placed after `#modal-item-history`, `z-index:210`): heading "Decommission `<serial>`?", a context line (location + notes), a plain consequence box ("Removes it from active inventory… reversible from Admin → Decommissioned"), a **required reason** via chips Damaged/Lost/Scrapped/Other(+free-text), and a Cancel (plain) + destructive **Decommission** button (`var(--err)` bg, white text) that stays **disabled until a reason is set**.
+- **`archiveItem(serial)`** rewritten: opens the modal + populates serial/context (fetches `/api/items/:serial` for location+notes, HTML-escaped); the old `prompt()` is gone. New helpers `setDecomReason`/`decomOtherInput`/`resetDecomReason` (chips reuse `btn-s`↔`btn-p` for the selected state — no new CSS) + `confirmDecommission` (the same `POST {reason,moved_by:'archive'}` → close + `openItemHistory` refresh + `loadArchived`/`loadInventory` if active).
+- Footer "Decommission / Scrap" label kept (err-outlined, isolated in its own footer section; Restore only appears when archived — mutually exclusive). `unarchiveItem`/Restore untouched.
+
+### Verify (Rule 17)
+`node --check` inline JS OK; **div balance 350/350 BALANCED** (new modal = +7 balanced divs). Traced: tap → modal shows the serial; Confirm disabled until a chip/Other reason is set; Cancel + backdrop close with no write; Confirm → archive + refresh to the ARCHIVED/Restore state; an already-archived item still shows Restore (unchanged). `/api/health` 200 post-deploy. Tap-feel = Ry's tablet check.
+
+### Scope / flags
+- Frontend only; no new entry point, no scan-to-scrap, no hard-delete path (none exists — kept that way), Restore unchanged.
+- OPTIONAL (flagged, NOT built per the brief): require typing the serial to enable Confirm for maximum protection — the required-reason + explicit destructive confirm is enough for accidental-tap prevention.
+
+### Files
+public/index.html, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No server/schema/route change.
+
+### Memory files
+→ **Ry: re-upload the four memory files (Rule 39).**
+
 ## 00:28 UTC — Finish rack rollout: Section A re-type (migration 0008) + Locations grouped-view polish
 
 **Single deliverable** (scope-guarded — ONLY the 20 Section-A `AR##S##` totes re-typed; the 1 real tote `RETURN-1`, the 35 SHELF_BIN oddballs, everything else untouched; Rules A/2). Migration 0008 (gated) + public/index.html (presentation polish, no grouping-logic rewrite). **server.js untouched.** HEAD at start `2131a90`.

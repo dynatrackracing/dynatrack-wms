@@ -670,6 +670,31 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 </div>
 
+<!-- DECOMMISSION CONFIRM (placed AFTER item-history + z-index 210 so it stacks ABOVE that overlay).
+     Hardens the destructive action: serial shown, reason required, explicit destructive Confirm. -->
+<div class="modal-bg" id="modal-decommission" style="z-index:210">
+  <div class="modal" style="max-width:440px">
+    <h2 style="margin:0 0 4px;font-size:18px">Decommission <span id="decom-serial" class="mono" style="color:var(--err)"></span>?</h2>
+    <div id="decom-context" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+    <div style="background:var(--err-d);border:1px solid var(--err);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">
+      Removes it from active inventory (dashboard, pick list, counts). History is kept and this is <strong>reversible</strong> from Admin &rarr; Decommissioned.
+    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:7px">Reason <span style="font-weight:400">(required)</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px">
+      <button type="button" class="btn btn-s decom-chip" onclick="setDecomReason('Damaged',this)">Damaged</button>
+      <button type="button" class="btn btn-s decom-chip" onclick="setDecomReason('Lost',this)">Lost</button>
+      <button type="button" class="btn btn-s decom-chip" onclick="setDecomReason('Scrapped',this)">Scrapped</button>
+      <button type="button" class="btn btn-s decom-chip" onclick="setDecomReason('Other',this)">Other</button>
+    </div>
+    <input id="decom-other" oninput="decomOtherInput(this.value)" maxlength="200" placeholder="Describe the reason…"
+      style="display:none;width:100%;padding:8px 10px;margin-bottom:14px;border:1px solid var(--border);border-radius:7px;font-family:inherit;font-size:13px;background:var(--bg2);color:var(--text)">
+    <div style="display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding-top:14px;margin-top:4px">
+      <button type="button" class="btn btn-s" onclick="closeModal('modal-decommission')">Cancel</button>
+      <button type="button" id="decom-confirm" class="btn" style="background:var(--err);color:#fff;border-color:var(--err)" disabled onclick="confirmDecommission()">Decommission</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast">
   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -906,16 +931,60 @@ async function openItemHistory(serial) {
   }
 }
 // ── Decommission / scrap (soft-archive) + restore — reversible, history retained ──
+// Guarded confirmation (replaces the old prompt() — an accidental tap can't archive). Opens
+// #modal-decommission: shows the serial + context, requires a reason, explicit destructive Confirm.
+var decomState = { serial: null, reason: null };
 async function archiveItem(serial) {
-  var reason = prompt('Decommission / scrap "' + serial + '"?\nOptional reason (damaged, lost, scrapped…):', '');
-  if (reason === null) return;  // cancelled
+  decomState = { serial: serial, reason: null };
+  document.getElementById('decom-serial').textContent = serial;
+  document.getElementById('decom-context').innerHTML = '<span style="color:var(--muted)">Loading…</span>';
+  resetDecomReason();
+  openModal('modal-decommission');
   try {
-    var r = await api('/items/' + encodeURIComponent(serial) + '/archive', { method: 'POST', body: { reason: reason || null, moved_by: 'archive' } });
+    var item = await api('/items/' + encodeURIComponent(serial));
+    var notes = (item.notes || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    var bits = ['Location <span class="mono" style="color:var(--text)">' + (item.location || '—') + '</span>'];
+    if (notes) bits.push('Notes <span style="color:var(--text)">' + notes + '</span>');
+    document.getElementById('decom-context').innerHTML = bits.join(' &middot; ');
+  } catch(e) { document.getElementById('decom-context').innerHTML = '<span style="color:var(--muted)">(could not load item details)</span>'; }
+}
+function resetDecomReason() {
+  decomState.reason = null;
+  document.querySelectorAll('.decom-chip').forEach(function(c){ c.classList.remove('btn-p'); c.classList.add('btn-s'); });
+  var ot = document.getElementById('decom-other'); ot.style.display = 'none'; ot.value = '';
+  document.getElementById('decom-confirm').disabled = true;
+}
+function setDecomReason(val, btn) {
+  document.querySelectorAll('.decom-chip').forEach(function(c){ c.classList.remove('btn-p'); c.classList.add('btn-s'); });
+  btn.classList.remove('btn-s'); btn.classList.add('btn-p');   // selected chip = navy primary
+  var ot = document.getElementById('decom-other');
+  if (val === 'Other') {
+    ot.style.display = 'block';
+    decomState.reason = ot.value.trim() || null;
+    document.getElementById('decom-confirm').disabled = !decomState.reason;
+    setTimeout(function(){ ot.focus(); }, 50);
+  } else {
+    ot.style.display = 'none';
+    decomState.reason = val;
+    document.getElementById('decom-confirm').disabled = false;
+  }
+}
+function decomOtherInput(v) {   // Other free-text → gates Confirm
+  decomState.reason = (v || '').trim() || null;
+  document.getElementById('decom-confirm').disabled = !decomState.reason;
+}
+async function confirmDecommission() {
+  var serial = decomState.serial, reason = decomState.reason;
+  if (!serial || !reason) return;   // belt-and-suspenders: Confirm is disabled until a reason is set
+  document.getElementById('decom-confirm').disabled = true;
+  try {
+    var r = await api('/items/' + encodeURIComponent(serial) + '/archive', { method: 'POST', body: { reason: reason, moved_by: 'archive' } });
+    closeModal('modal-decommission');
     showToast(r.archived ? serial + ' decommissioned — removed from active inventory.' : serial + ' is already archived.', !r.archived);
     openItemHistory(serial);                              // refresh the overlay to its archived state
     if (document.getElementById('page-admin').classList.contains('active')) loadArchived();
     if (document.getElementById('page-inventory').classList.contains('active')) loadInventory(invStatus);
-  } catch(e) { showToast('Decommission failed: ' + e.message, true); }
+  } catch(e) { document.getElementById('decom-confirm').disabled = false; showToast('Decommission failed: ' + e.message, true); }
 }
 async function unarchiveItem(serial) {
   try {
