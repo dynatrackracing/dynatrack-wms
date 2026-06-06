@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: d4fe3cf @ 2026-06-06 00:29 UTC (migration 0008: Section A's 20 mis-typed `AR##S##` UNLISTED_TOTE → RACK [now 510 RACK]; Locations grouped-view polish — 3 stepped tiers, bolder shelf rows, section spacers, "shelfves" typo fixed. Baseline 547 = 510 RACK + 35 SHELF_BIN + 1 UNLISTED_TOTE + 1 SHIPPED). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 00:28 UTC 2026-06-06
+LAST PUSHED COMMIT: 43a1459 @ 2026-06-06 00:48 UTC (Decommission/Scrap hardened — a required-reason confirm modal `#modal-decommission` replaces the old `prompt()`; frontend-only, archive route/schema/Restore unchanged). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 00:47 UTC 2026-06-06
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
