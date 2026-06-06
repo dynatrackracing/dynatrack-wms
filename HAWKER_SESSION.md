@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 70f4dee @ 2026-06-05 23:38 UTC (migration 0007: rack-pattern shelf bins → RACK [490], 1 malformed bin deleted, 9 section-O names renamed to compact; Locations page now groups Section → Rack → Shelf. Baseline 547 = 490 RACK + 35 SHELF_BIN + 21 UNLISTED_TOTE + 1 SHIPPED). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 23:36 UTC 2026-06-05
+LAST PUSHED COMMIT: d4fe3cf @ 2026-06-06 00:29 UTC (migration 0008: Section A's 20 mis-typed `AR##S##` UNLISTED_TOTE → RACK [now 510 RACK]; Locations grouped-view polish — 3 stepped tiers, bolder shelf rows, section spacers, "shelfves" typo fixed. Baseline 547 = 510 RACK + 35 SHELF_BIN + 1 UNLISTED_TOTE + 1 SHIPPED). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 00:28 UTC 2026-06-06
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
