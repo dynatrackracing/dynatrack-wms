@@ -1279,13 +1279,13 @@ function parseRackName(name) {
   if (!m) return null;
   return { section: m[1].toUpperCase(), rack: parseInt(m[2], 10), shelf: parseInt(m[3], 10) };
 }
-function locRowHtml(l, label) {
+function locRowHtml(l, label, indent) {
   var n = l.name.replace(/'/g, "\\'");
   var nameCell = label
-    ? '<span style="color:var(--text);font-weight:600">' + label + '</span> <span class="mono" style="color:var(--muted);font-size:11px">' + l.name + '</span>'
+    ? '<span style="color:var(--text);font-weight:700;font-size:13px">' + label + '</span> <span class="mono" style="color:var(--muted);font-size:11px;margin-left:5px">' + l.name + '</span>'
     : '<span class="mono" style="color:var(--text)">' + l.name + '</span>';
   return '<tr style="cursor:pointer" onclick="openLocationDetail(\'' + n + '\')">'
-    + '<td>' + nameCell + '</td>'
+    + '<td' + (indent ? ' style="padding-left:' + indent + 'px"' : '') + '>' + nameCell + '</td>'
     + '<td>' + locTypeBadge(l.type) + '</td>'
     + '<td class="mono">' + (l.item_count != null ? l.item_count : '–') + '</td>'
     + '<td><a href="#" onclick="event.stopPropagation();openLocationDetail(\'' + n + '\');return false" style="color:var(--brand);text-decoration:none;font-size:12px">View →</a></td></tr>';
@@ -1311,28 +1311,33 @@ function renderLocGrid() {
     sections[p.section][p.rack].push({ loc: l, shelf: p.shelf });
   });
 
+  // Three visual tiers: Section band (flush, 14px) → Rack sub-head (indented 34px) → Shelf rows (48px).
   function headerRow(txt, lvl) {
     var style = lvl === 1
-      ? 'background:var(--bg3);border-left:4px solid var(--brand);padding:9px 14px;font-weight:700;color:var(--text)'
-      : 'background:var(--bg2);border-left:4px solid var(--bh);padding:6px 14px 6px 26px;font-weight:600;color:var(--text2);font-size:13px';
+      ? 'background:var(--bg3);border-left:5px solid var(--brand);padding:11px 14px;font-weight:800;font-size:15px;color:var(--text)'
+      : 'background:var(--bg2);border-left:3px solid var(--bh);padding:7px 14px 7px 34px;font-weight:700;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--text2);border-top:1px solid var(--border)';
     return '<tr><td colspan="4" style="' + style + '">' + txt + '</td></tr>';
   }
+  function spacerRow() { return '<tr><td colspan="4" style="height:14px;padding:0;border:0;background:transparent"></td></tr>'; }
+  function meta(txt) { return ' <span style="color:var(--muted);font-weight:600;font-size:13px">· ' + txt + '</span>'; }
 
   var html = '';
-  Object.keys(sections).sort().forEach(function(sec) {
+  Object.keys(sections).sort().forEach(function(sec, si) {
+    if (si > 0) html += spacerRow();   // breathing room between sections
     var racks = sections[sec];
     var rackNums = Object.keys(racks).map(Number).sort(function(a, b){ return a - b; });
     var secCount = rackNums.reduce(function(a, r){ return a + racks[r].length; }, 0);
-    html += headerRow('Section ' + sec + ' <span style="color:var(--muted);font-weight:600">(' + secCount + ' shelf' + (secCount === 1 ? '' : 'ves') + ')</span>', 1);
+    html += headerRow('Section ' + sec + meta(rackNums.length + ' rack' + (rackNums.length === 1 ? '' : 's') + ', ' + secCount + ' ' + (secCount === 1 ? 'shelf' : 'shelves')), 1);
     rackNums.forEach(function(rn) {
       html += headerRow('Rack ' + (rn < 10 ? '0' + rn : rn), 2);
       racks[rn].sort(function(a, b){ return a.shelf - b.shelf; }).forEach(function(x) {
-        html += locRowHtml(x.loc, 'Shelf ' + x.shelf);
+        html += locRowHtml(x.loc, 'Shelf ' + x.shelf, 48);
       });
     });
   });
   if (other.length) {
-    html += headerRow('Other / Ungrouped <span style="color:var(--muted);font-weight:600">(' + other.length + ')</span>', 1);
+    html += spacerRow();
+    html += headerRow('Other / Ungrouped' + meta(String(other.length)), 1);
     other.sort(function(a, b){ return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); }).forEach(function(l){ html += locRowHtml(l, null); });
   }
 

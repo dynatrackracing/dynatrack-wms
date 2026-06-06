@@ -9,6 +9,37 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-06
+
+## 00:28 UTC — Finish rack rollout: Section A re-type (migration 0008) + Locations grouped-view polish
+
+**Single deliverable** (scope-guarded — ONLY the 20 Section-A `AR##S##` totes re-typed; the 1 real tote `RETURN-1`, the 35 SHELF_BIN oddballs, everything else untouched; Rules A/2). Migration 0008 (gated) + public/index.html (presentation polish, no grouping-logic rewrite). **server.js untouched.** HEAD at start `2131a90`.
+
+### Diagnose-first (Rule 1, read-only)
+- 21 UNLISTED_TOTE: **exactly 20** match `^AR[0-9]{2}S[0-9]{2}$` (AR01-AR04 × S01-S05), all 0 items; the 21st is `RETURN-1` (0 items, genuine tote — leave alone). No STOP conditions. These 20 are why Section A fell into "Other" after 0007 (mis-typed UNLISTED_TOTE at import).
+- Read `renderLocGrid`/`locRowHtml`/`headerRow` + grouped markup to plan the polish; found the "shelfves" typo (`'shelf' + 'ves'`).
+
+### Migration 0008 (db/migrations/0008-section-a-rack-retype.sql — GATED dry-run → Ry Railway snapshot + go-ahead → applied)
+`UPDATE locations SET type='RACK' WHERE type='UNLISTED_TOTE' AND name ~ '^AR[0-9]{2}S[0-9]{2}$'`. Guards re-asserted (exactly 20 match; `RETURN-1` doesn't match) before COMMIT → **20 re-typed**. Names unchanged → `items.location` FK + `moves` untouched. Live: **RACK 510 / SHELF_BIN 35 / UNLISTED_TOTE 1 (`RETURN-1`) / SHIPPED 1 = 547**; Section A = 20 RACK shelves. Reversible (type RACK→UNLISTED_TOTE where `AR##S##`).
+
+### Frontend polish (public/index.html — presentation only)
+- Typo "shelfves" → "shelves" (section meta now `· N racks, M shelves`).
+- **3 stepped tiers:** Section band flush + bold (800/15px) → RACK sub-head indented 34px, uppercased, top divider → Shelf rows indented 48px (`locRowHtml` gained an `indent` arg), bold "Shelf N" (700/13px) + real name mono.
+- **14px spacer rows** between sections for breathing room.
+
+### Verify (Rule 17)
+0008 dry-run: 20 re-typed, `RETURN-1` untouched, RACK 510. `node --check` server.js OK (untouched); **div balance 343/343 unchanged** (edits are runtime JS strings); inline JS parses. Post-deploy: Section A groups (AR01-AR04, S01-S05) like Section B, typo gone, stepped indentation/bolding/spacers. `/api/health` 200. Visual = Ry's tablet check.
+
+### Files
+db/migrations/0008-section-a-rack-retype.sql, public/index.html, HAWKER_RULES.md (rule 27), SNAPSHOT_SCHEMA.md, SNAPSHOT_FRONTEND.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. server.js untouched.
+
+### Still-open flags (Rule B, carried from 2026-06-05)
+- New-location default still `SHELF_BIN` (schema DEFAULT + add-location selects 446/617 + auto-create-on-scan server.js:307) — open decision whether it should become RACK.
+- Returns build earmark = **migration 0009** now.
+
+### Memory files
+HAWKER_RULES + HAWKER_SESSION + HAWKER_CHANGELOG (+ SNAPSHOT_SCHEMA/FRONTEND) updated → **Ry: re-upload the four memory files (Rule 39).**
+
 # 2026-06-05
 
 ## 23:36 UTC — Locations → racks: migration 0007 (scoped SHELF_BIN→RACK) + Locations page Section→Rack→Shelf navigation
