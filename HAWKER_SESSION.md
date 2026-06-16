@@ -9,6 +9,34 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-16
+
+## 08:49 UTC — Hyphen-dedup Step 1: archived 52 dashed-twin duplicates + persistent DB access (RO/RW)
+
+**Architect-approved multi-step EXEC (hyphenated-serial resolution); this session did Step 1 only + DB-access setup, then stopped as scoped.** No code/schema change. eBay untouched (Rule 25). `moves` untouched (Rule 13).
+
+### DB access established (durable, paste-free)
+- Created a **read-only Postgres role `claude_ro`** (SELECT-only, public proxy `interchange.proxy.rlwy.net:13701`) and a gitignored repo-root **`.env`** holding **`DATABASE_URL_RO`** (ambient, all diagnosis) + **`DATABASE_URL_RW`** (persistent privileged URL, for gated mutations). Verified: RO connects + **write denied**; RW connects + write allowed. `.env` is gitignored (never committed/pushed).
+- New convention in **CLAUDE.md** (`## DB ACCESS`) + new **`SETUP_DB_ACCESS.md`** runbook: reads use `DATABASE_URL_RO`, writes use persistent `DATABASE_URL_RW`, and the human-in-the-loop gate is the **dry-run → explicit "commit"**, not a per-session credential paste. Node scripts strip the `?sslmode` query and pass `ssl:{rejectUnauthorized:false}` (pg now treats `sslmode=require` as verify-full, which rejects Railway's self-signed proxy cert).
+
+### Step 0 (read-only live re-confirm) — the snapshot was stale
+Prior diagnosis ran off the pre-cutover snapshot (~18–19 twins / ~109 strip). **Live (3,665 active / 3,288 active STORED) differs:** **114** active hyphenated serials; Incomplete card pop **183** (114 hyphen / 60 numeric / 6 other / 3 url — matches the "~180" on the card). **Twin pairs (dashed STORED ↔ active no-dash twin) = 58**, not ~18 — the warehouse kept re-scanning hyphenless labels (no-dash twins created Jun 01–03). Full-table collision sweep: **0 collisions beyond the clean twin set** (data consistent). Dashed-older-than-no-dash held **57/58**.
+
+### Step 1 — archived 52 (held 6) — COMMITTED
+Per architect decision ("archive clean 52, hold 6"): soft-archived the **52** dashed members whose no-dash twin is **active STORED** (excludes 5 whose twin already **SHIPPED**, and the `FUS-3227` anomaly). Gated dry-run (`BEGIN→UPDATE→assert rowcount=52→verify twins still active→ROLLBACK`) passed, then `--commit`. `UPDATE items SET archived_at=NOW(), archive_reason='superseded by hyphenless re-scan (hyphen dedup 2026-06)' WHERE serial=ANY(52) AND archived_at IS NULL AND status='STORED'`. **Reversible.**
+- Post-commit verify (fresh RO): 52 archived w/ reason ✓; 0 of 52 still active ✓; 52 no-dash twins still active STORED ✓; 6 held untouched ✓; active STORED **3,288 → 3,236** (−52) ✓; active hyphenated STORED **114 → 62** (= 56 dash-strip targets + 6 held) ✓.
+- **Rollback artifact:** `C:\Users\atenr\hawker-hyphen-dedup-archive-rollback-2026-06-16T08-41-20-709Z.json` (the 52 serials; undo = clear `archived_at`/`archive_reason`).
+
+### ⏭ OPEN FOLLOW-UPS
+1. **Step 2 (next window):** deploy hyphen-tolerant `GET /api/items/:serial` lookup — dedicated `replace(/-/g,'')` normalizer (NOT `normalizeSkuKey`), scoped to `archived_at IS NULL`. Code + `git push`; ship BEFORE Step 3 so dashed labels stay scannable.
+2. **Step 3 (next window, needs RW):** migration `db/migrations/00NN-strip-hyphen-serials.sql` to dash-strip the remaining **56** no-twin active hyphenated serials (Rule 30 one-time exception; in-txn collision assert; `moves` left under prior serial).
+3. **6 held oddities — warehouse side:** 5 shipped-ghosts (`INT-4705`, `INT-4723`, `EXT-1034`, `MOD-20346`, `MOD-20380` — dashed record still STORED while hyphenless twin already shipped) + `FUS-3227` (hyphenless twin is *older*, different shelf). Physically eyeball before archiving/stripping.
+4. **🔐 ROTATE the privileged `postgres` password** — it was pasted into chat several times this session (now also persisted in `.env`). Rotate in Railway, then update `DATABASE_URL_RW` in `.env`.
+5. **~60 numeric-only + 3 URL + ~6 junk serials** still in Incomplete = genuine bad data → separate warehouse pass (untouched here).
+
+### Files
+CLAUDE.md (DB-access convention → paste-free), SETUP_DB_ACCESS.md (new), HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No app code / schema / snapshot change (Step 1 was data-only). **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 # 2026-06-06
 
 ## 00:47 UTC — Harden Decommission/Scrap confirm against accidental taps (frontend only)

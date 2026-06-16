@@ -74,6 +74,16 @@ M. **STATE YOUR SYNC STAMP FIRST (web architect).** At session start, read the S
 - **claude.ai project knowledge** is a **manual briefing-room re-upload** — no API, no automation (see HAWKER_RULES rules 36–37). After a session's commit, the human re-uploads the changed memory files to the project knowledge.
 - Claude Code: Auto Mode is enabled (`~/.claude/settings.json` → `"defaultMode": "auto"`).
 
+## DB ACCESS (ops convention — read this before claiming you're "locked out")
+
+**Diagnosis is never blocked on an interactive login.** A read-only connection is always available.
+
+- **Reads / all diagnosis → use `DATABASE_URL_RO` from `.env`** (Postgres role `claude_ro`, SELECT-only, public proxy host). This is ambient and safe. **Do NOT run `railway login` interactively for reads, and do NOT report "locked out" until you have first tried `DATABASE_URL_RO`.** Step 0 / read-only SQL connects with the repo's `pg` module against this string — no Railway CLI, no browser.
+- **Writes / migrations / archives → gated, but paste-free.** They use the **persistent `DATABASE_URL_RW` from `.env`** (privileged role; set up once, 2026-06-16) — **no per-session credential paste.** The human-in-the-loop gate is the **dry-run → explicit "commit"** step, NOT the presence of creds: every mutation runs as a `BEGIN … <update> … verify … ROLLBACK` dry-run first, you report the rowcount/verify, and you only re-run with `--commit` after the architect types "commit". Never commit a mutation without that. If `DATABASE_URL_RW` is somehow absent, do the read-only diagnosis and **stop at the mutation step with a clear ask** (Rules 1 / 13 / 30).
+- **Deploys** ship via `git push` → Railway auto-deploy. No CLI needed.
+- **Never** commit a connection string or token; `.env` is gitignored (machine-local, Rule 32 — it is NOT synced, so a fresh clone/machine may lack it). If `DATABASE_URL_RO` is genuinely absent (not just unset in your shell), say so once and point at `SETUP_DB_ACCESS.md` — don't fall back to interactive `railway login`.
+- If the CLI is ever needed: account token `RAILWAY_API_TOKEN` (not a project `RAILWAY_TOKEN`, which is deploy-scoped and 401s on `run`/`variables`); scope with `--service`, never `--project`.
+
 ## IF YOU ARE UNCERTAIN
 
 Ask one question. Wait for the answer. Do not proceed on a guess.
