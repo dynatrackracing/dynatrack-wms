@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 43a1459 @ 2026-06-06 00:48 UTC (Decommission/Scrap hardened — a required-reason confirm modal `#modal-decommission` replaces the old `prompt()`; frontend-only, archive route/schema/Restore unchanged). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 00:47 UTC 2026-06-06
+LAST PUSHED COMMIT: 6f13453 @ 2026-06-16 08:52 UTC (Hyphen-dedup Step 1 — soft-archived 52 dashed-twin duplicate serials [data-only, reversible]; established durable RO/RW DB access + paste-free write convention. eBay/moves untouched. Steps 2–3 + password rotation are open follow-ups). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 08:49 UTC 2026-06-16
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
