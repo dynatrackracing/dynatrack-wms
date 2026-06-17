@@ -194,11 +194,37 @@ app.get('/api/items/count', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Hyphen-tolerant item lookup (2026-06 hyphen dedup). The ~56 still-dashed labels keep the dash,
+// so a scan of "INT-4705" or "INT4705" must hit the same record. DEDICATED hyphen-only normalizer —
+// NOT normalizeSkuKey (it strips trailing letters and would merge INT4306 / INT4306R). Resolution
+// order adds hyphen-tolerance WITHOUT regressing exact lookups (openItemHistory opens archived/
+// shipped items via this same route):
+//   1. 2+ ACTIVE STORED rows share the hyphen-stripped key -> 409 multi-match (never silent-pick)
+//   2. else exact serial (any status) -> that row  (preserves archived/shipped/staged history)
+//   3. else the single ACTIVE STORED hyphen-stripped match -> that row  (the scan tolerance)
+//   4. else 404
 app.get('/api/items/:serial', requireAuth, async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM items WHERE serial = $1', [req.params.serial]);
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    const raw = req.params.serial;
+    const key = raw.trim().toUpperCase().replace(/-/g, '');   // hyphen-only; trailing letters kept
+    const { rows } = await pool.query(
+      `SELECT *,
+              (serial = $1) AS is_exact,
+              (replace(upper(btrim(serial)),'-','') = $2 AND archived_at IS NULL AND status = 'STORED') AS is_active_key
+         FROM items
+        WHERE serial = $1
+           OR (replace(upper(btrim(serial)),'-','') = $2 AND archived_at IS NULL AND status = 'STORED')`,
+      [raw, key]);
+    const activeKey = rows.filter(r => r.is_active_key);
+    if (activeKey.length > 1)
+      return res.status(409).json({
+        error: 'multiple matches — disambiguate',
+        candidates: activeKey.map(r => ({ serial: r.serial, location: r.location, status: r.status })),
+      });
+    const hit = rows.find(r => r.is_exact) || activeKey[0];
+    if (!hit) return res.status(404).json({ error: 'Not found' });
+    const { is_exact, is_active_key, ...item } = hit;
+    res.json(item);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
