@@ -9,6 +9,34 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-17
+
+## 04:21 UTC — Hyphen-dedup Steps 2–3 + serial fix: hyphen-tolerant lookup deployed, dash-stripped 56 serials, M020517→MOD20517
+
+**Closes the hyphenated-serial EXEC (architect-approved, multi-window).** Three changes since the 2026-06-16 Step-1 archive, all gated/verified. eBay untouched (Rule 25); `moves` untouched (Rule 13); `normalizeSkuKey` untouched (kept the server/frontend copies byte-identical). DB writes via persistent `DATABASE_URL_RW` (paste-free); every mutation = dry-run → explicit "commit".
+
+### 1. Serial correction `M020517 → MOD20517` (data; Rule 30 exception, reversible)
+One malformed serial (mangled MOD prefix) at BIN 20. Gated dry-run (assert 1 active `M020517`, assert no existing `MOD20517` collision, update, verify MOD20517/STORED/BIN 20 → ROLLBACK) then `--commit`. Now passes `VALID_SERIAL`, out of Incomplete. `moves` left under `M020517`. Rollback note: `~/hawker-serial-fix-rollback-2026-06-17T03-07-16-618Z.json`.
+
+### 2. Step 2 — hyphen-tolerant `GET /api/items/:serial` (CODE; commit `4b622d8`, deployed)
+The ~56 still-dashed labels keep the dash, so the scan/lookup path must tolerate a dash. **Dedicated hyphen-only normalizer** `s=>s.trim().toUpperCase().replace(/-/g,'')` (NOT `normalizeSkuKey` — that strips trailing letters and would merge `INT4306`/`INT4306R`). **The route is shared with `openItemHistory` (opens archived/shipped items)**, so a naive "active STORED only" scope would 404 / mis-route those — instead used a **safe superset** resolution order: (1) 2+ active-STORED rows sharing the hyphen-stripped key → **409 multi-match** (never silent-pick; currently only `FUS3227`/`FUS-3227`), (2) exact serial any-status → that row (preserves history), (3) single active-STORED hyphen match → that row (scan tolerance), (4) 404. `node --check` OK; `/api/health` 200 post-deploy. SNAPSHOT_ROUTES updated. Verified live: `MOD-20277`+`MOD20277` → same record; `FUS3227` → 409 multi-match. **Follow-up (NOT done):** `addToBatch` treats the 409 as `catch` → shows scanned serial as "NEW"; teach the scan UI to show "multiple matches".
+
+### 3. Step 3 — dash-stripped the 56 no-twin serials (DATA; Rule 30 exception, reversible)
+Target = `archived_at IS NULL AND serial LIKE '%-%'` minus the 6 held. Gated dry-run (target=56, collision guard=0, `UPDATE items SET serial=replace(serial,'-','')`, rowcount=56, all pass `^[A-Z]{2,4}\d+$`, 0 active non-held dashed remaining → ROLLBACK) then `--commit`. `moves` left under the prior dashed serials. Rollback artifact (old→new map): `~/hawker-hyphen-strip-rollback-2026-06-17T04-20-33-227Z.json`. Verified: 0 active non-held dashed serials; `ENG-4845`→`ENG4845` STORED@GR17S01 resolves via BOTH dashed and hyphenless forms.
+
+### Net effect
+**Incomplete (active STORED): 183 → 74.** The entire hyphen group is resolved (52 archived dups + 56 stripped) and `M020517` fixed. Remaining 74 = 60 numeric-only + 6 held-hyphen + 5 other + 3 url — genuine bad data for a separate warehouse pass.
+
+### ⏭ OPEN FOLLOW-UPS
+1. **6 held oddities — warehouse physical eyeball:** 5 shipped-ghosts (`INT-4705`, `INT-4723`, `EXT-1034`, `MOD-20346`, `MOD-20380` — dashed record STORED while hyphenless twin already shipped) + `FUS-3227` (hyphenless twin older, different shelf). Until resolved they correctly return 409 multi-match on scan.
+2. **Scan-UI 409 (frontend):** handle the multi-match response in `addToBatch` (show "multiple matches", not "NEW").
+3. **🔐 ROTATE the privileged `postgres` password** — pasted in chat several times + persisted in `.env`. Rotate in Railway, update `DATABASE_URL_RW`.
+4. **~74 bad-data serials** (numeric-only / URL / junk) — separate warehouse data pass.
+5. **History caveat:** a future per-item history view must query `moves` hyphen-insensitively — the 56 stripped (and 52 archived) items' `moves` rows still carry the old dashed serial.
+
+### Files
+public/index.html — none this session (Step 2 code was `server.js` only). Committed: server.js + SNAPSHOT_ROUTES.md in `4b622d8`; this close-out commits HAWKER_SESSION.md + HAWKER_CHANGELOG.md (data-only Steps 1/3 + serial fix carry no repo diff). **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 # 2026-06-16
 
 ## 08:49 UTC — Hyphen-dedup Step 1: archived 52 dashed-twin duplicates + persistent DB access (RO/RW)
