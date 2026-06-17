@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 6f13453 @ 2026-06-16 08:52 UTC (Hyphen-dedup Step 1 — soft-archived 52 dashed-twin duplicate serials [data-only, reversible]; established durable RO/RW DB access + paste-free write convention. eBay/moves untouched. Steps 2–3 + password rotation are open follow-ups). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 08:49 UTC 2026-06-16
+LAST PUSHED COMMIT: 65a101f @ 2026-06-17 04:22 UTC (Hyphen-dedup EXEC CLOSED — Step 2 hyphen-tolerant /api/items/:serial lookup deployed [4b622d8]; Step 3 dash-stripped 56 no-twin serials [data, reversible]; M020517→MOD20517 fix. Incomplete 183→74. eBay/moves/normalizeSkuKey untouched. OPEN: 6 held oddities [warehouse], addToBatch 409 UX, 🔐 ROTATE postgres password). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 04:21 UTC 2026-06-17
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
