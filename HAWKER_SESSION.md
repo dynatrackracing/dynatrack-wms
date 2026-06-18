@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 65a101f @ 2026-06-17 04:22 UTC (Hyphen-dedup EXEC CLOSED — Step 2 hyphen-tolerant /api/items/:serial lookup deployed [4b622d8]; Step 3 dash-stripped 56 no-twin serials [data, reversible]; M020517→MOD20517 fix. Incomplete 183→74. eBay/moves/normalizeSkuKey untouched. OPEN: 6 held oddities [warehouse], addToBatch 409 UX, 🔐 ROTATE postgres password). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 04:21 UTC 2026-06-17
+LAST PUSHED COMMIT: 4d71c8b @ 2026-06-18 08:11 UTC (Soft-Delete UI feature deployed [782f982] — per-row + bulk archive on Inventory + Inventory Health [Incomplete/WMS-Only only], new POST /api/items/bulk-archive, reversible; live-verified. Incomplete bucket cleared 183→0 [5 shipped-ghosts + 69-item cleanup, incl. FUS-3227, reversible]. eBay/moves/normalizeSkuKey untouched. OPEN: 🔐 ROTATE postgres password, addToBatch 409 UX, ZZ9001-3 verify-artifact purge). All prior work LIVE on origin/main.
+STAMP UPDATED BY: Claude Code, session 08:09 UTC 2026-06-18
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
