@@ -288,6 +288,37 @@ app.post('/api/items/:serial/archive', requireAuth, async (req, res) => {
   } finally { client.release(); }
 });
 
+// ── Bulk soft-archive (UI "Delete selected") ─────────────────────────────────
+// Archives a list of serials in ONE txn with the SAME semantics as the single archive: each
+// newly-archived item sets archived_at + reason AND gets ONE moves 'ARCHIVED' row (append-only,
+// Rule 13). Already-archived serials are skipped by the guard. Reversible via /unarchive. No eBay
+// (Rule 25); no schema change. Returns the count actually archived.
+app.post('/api/items/bulk-archive', requireAuth, async (req, res) => {
+  const { serials, reason, moved_by = 'archive' } = req.body || {};
+  if (!Array.isArray(serials) || !serials.length) return res.status(400).json({ error: 'serials[] required' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE items SET archived_at = NOW(), archive_reason = $2
+         WHERE serial = ANY($1) AND archived_at IS NULL
+         RETURNING serial, location`,
+      [serials, reason || null]
+    );
+    for (const r of rows) {
+      await client.query(
+        `INSERT INTO moves (serial, from_location, to_location, moved_by) VALUES ($1, $2, 'ARCHIVED', $3)`,
+        [r.serial, r.location || null, moved_by]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, archived: rows.length });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  } finally { client.release(); }
+});
+
 // ── Un-archive: restore a decommissioned item (reverse of archive) ───────────
 // Clears archived_at + reason and writes one moves row back FROM 'ARCHIVED' to the item's
 // retained location (it never physically left, so it returns to its shelf). Guarded to an

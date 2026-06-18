@@ -336,7 +336,12 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
     <button class="tab" onclick="filterInvStatus('STAGED_UNLISTED',this)">Staged</button>
     <button class="tab" onclick="filterInvStatus('SHIPPED',this)">Shipped</button>
   </div>
-  <div class="card"><div class="tw"><table><thead><tr><th>Serial ID</th><th>Status</th><th>Location</th><th>Notes</th><th>Updated</th></tr></thead><tbody id="inv-table"><tr><td colspan="5" class="loading">Loading…</td></tr></tbody></table></div></div>
+  <div id="inv-bulk-bar" class="no-print" style="display:none;align-items:center;gap:12px;margin:0 0 10px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px">
+    <span style="font-weight:600"><span id="inv-sel-count">0</span> selected</span>
+    <button class="btn btn-s" style="color:var(--err);border-color:var(--err)" onclick="deleteSelectedInv()">Delete selected</button>
+    <button class="btn btn-s" onclick="clearInvSel()">Clear</button>
+  </div>
+  <div class="card"><div class="tw"><table><thead><tr><th class="no-print" style="width:30px"><input type="checkbox" id="inv-cb-all" title="Select all" onchange="toggleInvSelectAll(this.checked)"></th><th>Serial ID</th><th>Status</th><th>Location</th><th>Notes</th><th>Updated</th><th class="no-print"></th></tr></thead><tbody id="inv-table"><tr><td colspan="7" class="loading">Loading…</td></tr></tbody></table></div></div>
 </div>
 
 <!-- ═══════ LABELS ═══════ -->
@@ -695,6 +700,21 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
   </div>
 </div>
 
+<!-- DELETE (soft) CONFIRM — junk cleanup; reversible via Admin → Decommissioned -->
+<div class="modal-bg" id="modal-confirm-delete" style="z-index:220">
+  <div class="modal" style="max-width:440px">
+    <h2 style="margin:0 0 8px;font-size:18px" id="del-title">Delete items?</h2>
+    <div id="del-list" class="mono" style="font-size:12px;color:var(--text2);max-height:150px;overflow:auto;background:var(--bg3);border-radius:8px;padding:9px 12px;margin-bottom:12px"></div>
+    <div style="background:var(--bg3);border-left:4px solid var(--brand);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--text);margin-bottom:14px">
+      Soft delete — items are <strong>archived, not destroyed</strong>. They leave active inventory, counts, and Inventory Health immediately, and can be restored anytime from <strong>Admin &rarr; Decommissioned</strong>.
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--border);padding-top:14px">
+      <button type="button" class="btn btn-s" onclick="closeModal('modal-confirm-delete')">Cancel</button>
+      <button type="button" id="del-confirm" class="btn" style="background:var(--err);color:#fff;border-color:var(--err)" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div id="toast">
   <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -994,6 +1014,65 @@ async function unarchiveItem(serial) {
     if (document.getElementById('page-admin').classList.contains('active')) loadArchived();
     if (document.getElementById('page-inventory').classList.contains('active')) loadInventory(invStatus);
   } catch(e) { showToast('Restore failed: ' + e.message, true); }
+}
+
+// ── Soft-DELETE (junk cleanup) — wires to the archive endpoints; reversible ───
+// Per-row + multi-select "Delete" on Inventory and a per-row Delete on Inventory Health
+// (Incomplete / WMS Only). Soft delete = archive (archived_at + reason), so items drop out of
+// every active count immediately and Restore from Admin → Decommissioned. NOT a hard delete.
+var invSel = {};                                  // serial -> true (Inventory page multi-select)
+var delState = { serials: [] };
+var DELETE_REASON = 'deleted via UI';
+function toggleInvSelect(serial, on) { if (on) invSel[serial] = true; else delete invSel[serial]; updateInvDeleteBar(); }
+function toggleInvSelectAll(on) {
+  invSel = {};
+  document.querySelectorAll('#inv-table input.inv-cb').forEach(function(cb){ cb.checked = on; if (on) invSel[cb.getAttribute('data-serial')] = true; });
+  updateInvDeleteBar();
+}
+function clearInvSel() {
+  invSel = {};
+  var all = document.getElementById('inv-cb-all'); if (all) all.checked = false;
+  document.querySelectorAll('#inv-table input.inv-cb').forEach(function(cb){ cb.checked = false; });
+  updateInvDeleteBar();
+}
+function updateInvDeleteBar() {
+  var n = Object.keys(invSel).length;
+  var bar = document.getElementById('inv-bulk-bar'); if (bar) bar.style.display = n ? 'flex' : 'none';
+  var c = document.getElementById('inv-sel-count'); if (c) c.textContent = n;
+}
+function deleteSelectedInv() { deleteItems(Object.keys(invSel)); }
+function deleteItems(serials) {
+  serials = (serials || []).filter(Boolean);
+  if (!serials.length) { showToast('Nothing selected', true); return; }
+  delState.serials = serials;
+  document.getElementById('del-title').textContent = 'Delete ' + serials.length + ' item' + (serials.length === 1 ? '' : 's') + '?';
+  document.getElementById('del-list').textContent = serials.join(', ');
+  document.getElementById('del-confirm').disabled = false;
+  openModal('modal-confirm-delete');
+}
+async function confirmDelete() {
+  var serials = delState.serials || [];
+  if (!serials.length) return;
+  document.getElementById('del-confirm').disabled = true;
+  try {
+    var archived;
+    if (serials.length === 1) {
+      var r1 = await api('/items/' + encodeURIComponent(serials[0]) + '/archive', { method: 'POST', body: { reason: DELETE_REASON, moved_by: 'archive' } });
+      archived = r1.archived || 0;
+    } else {
+      var rN = await api('/items/bulk-archive', { method: 'POST', body: { serials: serials, reason: DELETE_REASON, moved_by: 'archive' } });
+      archived = rN.archived || 0;
+    }
+    closeModal('modal-confirm-delete');
+    showToast('Deleted ' + archived + ' item' + (archived === 1 ? '' : 's') + ' — archived (reversible).', archived === 0);
+    invSel = {};
+    refreshAfterDelete();
+  } catch (e) { document.getElementById('del-confirm').disabled = false; showToast('Delete failed: ' + e.message, true); }
+}
+function refreshAfterDelete() {
+  if (document.getElementById('page-inventory').classList.contains('active')) loadInventory(invStatus);
+  var ph = document.getElementById('page-health');     if (ph && ph.classList.contains('active')) loadInventoryHealth();
+  var pa = document.getElementById('page-admin');      if (pa && pa.classList.contains('active')) loadArchived();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1483,15 +1562,19 @@ async function loadInventory(status) {
     var items = await api('/items?' + params);
     document.getElementById('inv-count').textContent = items.length + ' items' + (status ? ' · ' + status : '');
     var tb = document.getElementById('inv-table');
-    if (!items.length) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:18px">No items found</td></tr>'; setSynced(); return; }
+    if (!items.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:18px">No items found</td></tr>'; clearInvSel(); setSynced(); return; }
     tb.innerHTML = items.map(function(i) {
       var sc = i.status === 'STORED' ? 'bg-s' : i.status === 'STAGED_UNLISTED' ? 'bg-p' : i.status === 'SHIPPED' ? 'bg-m' : 'bg-w';
-      return '<tr><td class="mono"><a href="#" onclick="openItemHistory(\'' + i.serial.replace(/'/g, "\\'") + '\');return false" style="color:var(--brand);text-decoration:none" title="View item history">' + i.serial + '</a></td>'
+      var n = i.serial.replace(/'/g, "\\'");
+      return '<tr><td class="no-print"><input type="checkbox" class="inv-cb" data-serial="' + i.serial.replace(/"/g, '&quot;') + '" onchange="toggleInvSelect(\'' + n + '\',this.checked)"></td>'
+        + '<td class="mono"><a href="#" onclick="openItemHistory(\'' + n + '\');return false" style="color:var(--brand);text-decoration:none" title="View item history">' + i.serial + '</a></td>'
         + '<td><span class="badge ' + sc + '">' + i.status + '</span></td>'
         + '<td class="mono">' + (i.location||'–') + '</td>'
         + '<td style="color:var(--muted);font-size:11px">' + (i.notes||'') + '</td>'
-        + '<td class="mono">' + new Date(i.updated_at).toLocaleDateString('en-AU') + '</td></tr>';
+        + '<td class="mono">' + new Date(i.updated_at).toLocaleDateString('en-AU') + '</td>'
+        + '<td class="no-print" style="text-align:right"><button class="btn btn-s" style="padding:3px 9px;font-size:11px;color:var(--err)" onclick="deleteItems([\'' + n + '\'])">Delete</button></td></tr>';
     }).join('');
+    clearInvSel();
     setSynced();
   } catch(e) { setSyncErr(e); showToast('Inventory error: ' + e.message, true); }
 }
@@ -2291,6 +2374,11 @@ function healthRowHtml(r) {
     badge += r.hidden
       ? '<br><button class="btn btn-s" style="margin-top:5px;padding:2px 9px;font-size:11px" onclick="restoreHealthRow(\'' + bk + '\',\'' + ok + '\')">Restore</button>'
       : '<br><button class="btn btn-s" style="margin-top:5px;padding:2px 9px;font-size:11px;color:var(--muted)" onclick="hideHealthRow(\'' + bk + '\',\'' + ok + '\')">Hide</button>';
+  }
+  // Soft-Delete (junk cleanup) — Incomplete + WMS Only rows; archives the row's WMS serial(s).
+  if ((r.status === 'Incomplete' || r.status === 'WMS Only') && r.wms && r.wms.length) {
+    var delSerials = r.wms.map(function(i){ return "'" + (i.serial || '').replace(/'/g, "\\'") + "'"; }).join(',');
+    badge += '<br><button class="btn btn-s" style="margin-top:5px;padding:2px 9px;font-size:11px;color:var(--err)" onclick="deleteItems([' + delSerials + '])">Delete</button>';
   }
 
   function listingBlock(l) {
