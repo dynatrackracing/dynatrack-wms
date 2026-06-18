@@ -9,6 +9,34 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-06-18
+
+## 08:09 UTC — Soft-Delete UI feature + Incomplete bucket cleared to 0 (shipped-ghosts + 69-item cleanup)
+
+**Three things, all closing out the hyphen-dedup arc.** No schema change; eBay untouched (Rule 25); `moves` append-only (Rule 13); `normalizeSkuKey` untouched. DB writes via persistent `DATABASE_URL_RW` (paste-free), every mutation gated dry-run → explicit "commit".
+
+### 1. Data — Incomplete bucket emptied (183 → 0)
+- **5 shipped-twin ghosts archived** (`EXT-1034`, `INT-4705`, `INT-4723`, `MOD-20346`, `MOD-20380`): each was active STORED while its hyphenless twin was already SHIPPED. Gated dry-run (premise: each target active STORED + twin SHIPPED; rowcount=5) → commit. Reversible; rollback `~/hawker-shipped-ghost-archive-rollback-2026-06-17T04-41-43-092Z.json`. (Incomplete 74 → 69.)
+- **69-item Incomplete cleanup** (the remaining junk **+ `FUS-3227`**, included per explicit go-ahead): 60 numeric-only (`000002`…), 3 USPS-URL pastes, 5 other (`CR01S04` shelf-code mis-scan / `e` / `E` / `EN` / `G5225`), 1 hyphenated (`FUS-3227`). Soft-archived in one txn, reason `incomplete-list cleanup (2026-06)`, **one `moves` 'ARCHIVED' row each**; gated dry-run (rowcount=69, Incomplete-remaining=0) → commit. Reversible; rollback `~/hawker-incomplete-cleanup-rollback-2026-06-18T07-53-04-720Z.json`. `FUS3227` (the live hyphenless twin) stays active on BR04S05. **Incomplete (active STORED) = 0.**
+
+### 2. Code — Soft-Delete UI feature (commit `782f982`, deployed)
+A reversible "Delete" so junk can be cleared from the UI without a script. Wires to the existing soft-archive (`archived_at` + reason) — **no hard delete, no schema change.**
+- **Backend:** new `POST /api/items/bulk-archive` (`{serials:[],reason?}` → one txn, guarded `UPDATE … WHERE serial=ANY($) AND archived_at IS NULL` + **one `moves` 'ARCHIVED' row per item**; `{archived:N}`). Per-row Delete reuses the single `/archive`.
+- **Frontend:** Inventory page — row checkboxes + select-all + "Delete selected (N)" bar + per-row Delete. Inventory Health — per-row Delete on **Incomplete + WMS Only rows ONLY** (not Matched/eBay-Only/Duplicate/Cross-listed). New `#modal-confirm-delete` shows the count + "archived, not destroyed; restore from Admin → Decommissioned". Functions `deleteItems`/`confirmDelete`/`refreshAfterDelete` + selection helpers; default reason `'deleted via UI'`.
+- **Note:** `addToBatch` still treats a 409 multi-match as "NEW" (scan-UI follow-up, not done). The Admin → Decommissioned (Archived) list with Restore already existed — covers the "view archived/restore" need.
+
+### 3. Verify (Rule 17)
+`node --check server.js` OK; inline JS parses; divs 356/356 balanced; `/api/health` 200 post-deploy. **Live-verified the deployed endpoints** via a temporary DB-injected session token (no WMS creds touched; token expires in 1h, swept) on throwaway test serials `ZZ9001/2/3`: per-row `/archive` → `{archived:1}`, `/bulk-archive` → `{archived:2}`, both wrote a `moves` 'ARCHIVED' row, items dropped from the active list, `/unarchive` restored → `{restored:1}`. Matched-row "no Delete button" confirmed by the `healthRowHtml` gate. **Leftover:** the 3 `ZZ9001/2/3` test items remain **archived** (not hard-deleted — would violate Rule 13 on their `moves` rows); they sit in Admin → Decommissioned (reason "verify artifact — safe to purge"), invisible to active views. **Decide: leave them, or authorize a one-time hard purge.**
+
+### ⏭ OPEN FOLLOW-UPS
+1. **🔐 ROTATE the privileged `postgres` password** — pasted in chat repeatedly + in `.env`. (Most urgent.)
+2. **Scan-UI 409** — teach `addToBatch` to show "multiple matches" instead of "NEW" (frontend).
+3. **`ZZ9001/2/3` verify artifacts** — leave archived, or authorize a hard purge (incl. their `moves` rows).
+4. **History caveat** — per-item `moves` history must be queried hyphen-insensitively for the stripped/archived items.
+
+### Files
+server.js + public/index.html (in `782f982`); this close-out commits SNAPSHOT_ROUTES.md (+ bulk-archive) + SNAPSHOT_FRONTEND.md (+ Soft-Delete) + HAWKER_SESSION.md + HAWKER_CHANGELOG.md. **Ry: re-upload the four memory files to claude.ai project knowledge (Rule 39).**
+
 # 2026-06-17
 
 ## 04:21 UTC — Hyphen-dedup Steps 2–3 + serial fix: hyphen-tolerant lookup deployed, dash-stripped 56 serials, M020517→MOD20517
