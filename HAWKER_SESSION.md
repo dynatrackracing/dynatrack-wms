@@ -1,6 +1,6 @@
 <!-- SYNC STAMP -->
-LAST PUSHED COMMIT: 4d71c8b @ 2026-06-18 08:11 UTC (Soft-Delete UI feature deployed [782f982] — per-row + bulk archive on Inventory + Inventory Health [Incomplete/WMS-Only only], new POST /api/items/bulk-archive, reversible; live-verified. Incomplete bucket cleared 183→0 [5 shipped-ghosts + 69-item cleanup, incl. FUS-3227, reversible]. eBay/moves/normalizeSkuKey untouched. OPEN: 🔐 ROTATE postgres password, addToBatch 409 UX, ZZ9001-3 verify-artifact purge). All prior work LIVE on origin/main.
-STAMP UPDATED BY: Claude Code, session 08:09 UTC 2026-06-18
+LAST PUSHED COMMIT: 77ecf45 @ 2026-07-07 17:34 UTC (READ-ONLY diagnosis logged: MOD18130 returns needed a double-scan — its matched SHIPPED order line had ship_move_applied_at IS NULL, so reconcile Phase 2 re-shipped the returned item [proof: stamp ts = the exact ebay-sync re-ship move]; self-healed now. Root cause: original 6/22 ship was a MANUAL move [moved_by='dynatrack'] + line first_seen post-dates the 0004 backfill, so it was never stamped — latent gap: any manually-shipped item re-arms the pre-0004 re-ship-on-return bug for one cycle. Live scope: 608 total unstamped SHIPPED lines / 0 ARMED-NOW [no live oversell] / 554 LATENT bite-once-on-return. server.js Phase-2 code unchanged vs SNAPSHOT [0004 guard intact]. NO code/data/migration — session log only. OPEN: [1] stamp in reconcile Phase 1 + manual-ship path; [2] one-time gated backfill of the 608 NULLs. Prior OPEN carried: 🔐 ROTATE postgres password, addToBatch 409 UX, ZZ9001-3 verify-artifact purge.)
+STAMP UPDATED BY: Claude Code, session 17:34 UTC 2026-07-07
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
