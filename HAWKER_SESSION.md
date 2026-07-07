@@ -9,6 +9,35 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-07-07
+
+## 17:34 UTC — MOD18130 returns diagnosis (READ-ONLY): unstamped SHIPPED lines re-arm the pre-0004 re-ship-on-return bug
+
+**Diagnose-only (Rule 1). No code, no data, no migration this session — all reads via `DATABASE_URL_RO` (SELECT-only).** The one write is this log entry. HEAD at start `dc885b9`.
+
+### Finding — hypothesis CONFIRMED
+`MOD18130` needed a **double return-scan** because its matched SHIPPED order line had **`ship_move_applied_at IS NULL`**, so reconcile **Phase 2 re-shipped the returned item** on the 15:05 sync. **Proof:** the line's `ship_move_applied_at` = `2026-07-07T15:05:52.983Z`, the *exact* timestamp of the `moved_by='ebay-sync'` re-ship move in `moves` — i.e. the stamp was first written **at the re-ship**, proving it was NULL until then. Move trail (ground truth): 6/22 13:47 ship (manual, `dynatrack`) → 7/7 14:52 return (`dynatrack`, scan #1) → 7/7 15:05 **re-ship (`ebay-sync`, the bug)** → 7/7 15:07 return (`dynatrack`, scan #2, stuck). **Self-healed:** the line is now stamped (15:05:52), so MOD18130 will **not** recur.
+
+### Root cause — latent gap in the 0004 ship-once guard
+The original 6/22 ship was a **manual move to SHIPPED** (`moved_by='dynatrack'`), and **only reconcile Phase 2 writes `ship_move_applied_at`** — a manual ship never stamps. The line's `first_seen` (6/22) is also **after** the 0004 one-time backfill (5/31), so nothing ever stamped it. While the item sat SHIPPED, Phase 2 never selected it (candidates must be `STORED`), so it stayed NULL until the return made it a candidate. **Net:** any **manually-shipped** item carries an unstamped SHIPPED line and re-arms the pre-0004 "re-ship on return" symptom for exactly one cycle.
+
+### Live code check — NOT moved
+`server.js:1049–1078` (reconcile Phase 2) still matches `SNAPSHOT_ROUTES.md`'s 0004 guard byte-for-byte: candidates gated on `e.ship_move_applied_at IS NULL`; same-txn stamp `UPDATE ebay_order_lines SET ship_move_applied_at = NOW() … AND ship_move_applied_at IS NULL`; `STORED` `FOR UPDATE` re-check. No regression — this is a coverage gap, not a broken guard.
+
+### Scope (live counts, `DATABASE_URL_RO`, 17:xx UTC)
+- **Total landmines** (`disposition='SHIPPED' AND ship_move_applied_at IS NULL`): **608**
+- **ARMED NOW** (matched item currently STORED → next sync re-ships it): **0** ✅ — no oversell/phantom flip is currently live.
+- **LATENT** (matched item currently SHIPPED → bites once on its next return): **554**
+- (608 − 554 − 0 = 54 unstamped lines whose matched item is archived/unmatched — not return-relevant.)
+- Interpretation: nothing will silently flip on the next order-sync **right now**; the 554 are one-cycle time-bombs that each fire on the item's next return-to-shelf.
+
+### ⏭ OPEN FOLLOW-UPS (NOT done — future gated session)
+1. **Close at source in reconcile Phase 1:** when upserting a line as SHIPPED where the matched item is **already SHIPPED**, stamp `ship_move_applied_at` there. This catches **both orderings** (manual-ship-before-eBay-match and after); stamping only in the manual `/api/move` SHIPPED path would miss the case where the manual ship precedes eBay reporting/matching the sale. **Belt-and-suspenders:** stamp in **both** the manual-ship path **and** Phase 1.
+2. **One-time gated backfill migration** to stamp the existing NULL lines (same shape as the original 0004 deploy that backfilled 1,842) — the path fix alone does **not** defuse the 608/554 already-existing landmines.
+
+### Files
+HAWKER_SESSION.md only (this entry + sync-stamp refresh). No code / schema / snapshot / data change. `HAWKER_CHANGELOG.md` deliberately untouched (nothing changed). **Ry: re-upload HAWKER_SESSION.md to the claude.ai project knowledge (Rule 39).**
+
 # 2026-06-18
 
 ## 08:09 UTC — Soft-Delete UI feature + Incomplete bucket cleared to 0 (shipped-ghosts + 69-item cleanup)
