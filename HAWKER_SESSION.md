@@ -11,6 +11,35 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 # 2026-07-07
 
+## 18:15 UTC — FIX: returns re-ship bug closed (Phase-1 self-heal stamp + one-time 608-row backfill)
+
+**One deliverable — the fix for the 17:34 diagnosis below.** Makes scan-backs stick. Code fix (reconcile Phase 1) + one-time GATED data backfill. eBay untouched (Rule 25); `moves` untouched (Rule 13); no schema change; Phase 2 ship-move + the ship-wins-over-cancel rule NOT changed. HEAD at start `6e35b76`.
+
+### Root cause (recap)
+Only reconcile Phase 2 stamped `ship_move_applied_at`. An item shipped by a **manual move to SHIPPED** (`moved_by='dynatrack'`) never got stamped, so its SHIPPED order line sat `ship_move_applied_at IS NULL`; on return-to-STORED the next eBay sync's Phase 2 re-shipped it once (MOD18130 needed a double scan). Scope at start: 608 total unstamped SHIPPED lines / **0 armed-now** / 554 latent.
+
+### Step 1 — re-confirmed live state (read-only, `DATABASE_URL_RO`)
+608 total / **0 armed-now** / 554 latent — unchanged; armed-now still 0, so no live oversell. Safe to proceed.
+
+### Step 2 — code fix (server.js, reconcile Phase 1 ON-CONFLICT upsert)
+Added one `ship_move_applied_at` assignment to the Phase-1 `ON CONFLICT DO UPDATE SET`: stamp it when this (effectively) SHIPPED line's **matched item is already `SHIPPED`** — `COALESCE(ebay_order_lines.ship_move_applied_at, CASE WHEN (EXCLUDED.disposition='SHIPPED' OR ebay_order_lines.disposition='SHIPPED') AND ebay_order_lines.disposition IS DISTINCT FROM 'DISMISSED' AND EXISTS(SELECT 1 FROM items it WHERE it.serial=COALESCE(EXCLUDED.matched_serial, ebay_order_lines.matched_serial) AND it.status='SHIPPED') THEN NOW() END)`. Only ever sets NULL→NOW() (never un-stamps); evaluated in SQL because a re-synced already-shipped item is no longer a STORED match candidate, so its `matched_serial` lives only in the DB row. Self-heals every manually-shipped line on the next sync and stops new landmines forming. **Did NOT** change Phase 2, the disposition CASE, or ship-wins-over-cancel. **Belt-and-suspenders `/api/move` stamp deliberately skipped** — Phase 1 fully closes it; kept it one coherent change (Rule A). `node --check server.js` OK.
+
+### Step 3 — one-time backfill (GATED dry-run → explicit "commit"), via `DATABASE_URL_RW`
+`UPDATE ebay_order_lines SET ship_move_applied_at = COALESCE(ebay_shipped_time, last_synced, NOW()) WHERE disposition='SHIPPED' AND ship_move_applied_at IS NULL RETURNING …`. Dry-run (BEGIN→UPDATE→verify→ROLLBACK): rowcount **608** = pre; in-txn remaining unstamped **0**; in-txn armed **0** → all guards passed. Architect typed "commit" → re-ran with `--commit`: **608 rows stamped, COMMITTED.** Rollback artifact (stamped ids; undo = set those back to NULL): `~/hawker-ship-stamp-backfill-rollback-2026-07-07T18-14-20-202Z.json`.
+
+### Step 4 — post-commit verify (read-only)
+Unstamped SHIPPED lines remaining **0** ✓ · armed **0** ✓ · latent **0** ✓ · **MOD18130 untouched** (STORED @ HR06S01, `archived_at` null, line stamp unchanged `2026-07-07T15:05:52.983Z`) ✓.
+
+### Step 5 — housekeeping
+Regenerated `SNAPSHOT_ROUTES.md` (Phase-1 self-heal documented; corrected the stale "Phase 1 never touches ship_move_applied_at" line; noted the second 608-row backfill). Code fix + snapshot + memory files committed and pushed to `origin/main` (hash in the SYNC STAMP above); `/api/health` re-checked 200/db:connected post-deploy. `HAWKER_CHANGELOG.md` gets an entry (code changed this session).
+
+### Scope / flags (Rule B)
+- One deliverable; did **not** build the Returns page or return-record schema (that's the next deliverable, as instructed).
+- Carried OPEN (unchanged): 🔐 ROTATE the privileged `postgres` password (chat-leaked + in `.env`); `addToBatch` 409 multi-match shows "NEW" (scan-UI); `ZZ9001-3` verify-artifact purge; `moves` history must be queried hyphen-insensitively for stripped/archived items.
+
+### Files
+server.js, SNAPSHOT_ROUTES.md, HAWKER_SESSION.md, HAWKER_CHANGELOG.md. No schema/frontend change. **Ry: re-upload HAWKER_SESSION.md + HAWKER_CHANGELOG.md + SNAPSHOT_ROUTES.md to the claude.ai project knowledge (Rule 39).**
+
 ## 17:34 UTC — MOD18130 returns diagnosis (READ-ONLY): unstamped SHIPPED lines re-arm the pre-0004 re-ship-on-return bug
 
 **Diagnose-only (Rule 1). No code, no data, no migration this session — all reads via `DATABASE_URL_RO` (SELECT-only).** The one write is this log entry. HEAD at start `dc885b9`.

@@ -1026,6 +1026,20 @@ async function reconcileOrderLines(orderList) {
              ELSE EXCLUDED.disposition
            END,
            ebay_last_modified  = COALESCE(EXCLUDED.ebay_last_modified, ebay_order_lines.ebay_last_modified),
+           -- Ship-once self-heal (2026-07-07): if this SHIPPED line's matched item is ALREADY SHIPPED, the
+           -- ship happened by other means (e.g. a MANUAL move to SHIPPED, which never runs Phase 2's stamp),
+           -- so the ship-once guard should treat it as satisfied. Stamping it here stops Phase 2 from
+           -- re-shipping the item when it is later returned to STORED (the pre-0004 re-ship-on-return bug),
+           -- and prevents new landmines forming. COALESCE keeps any existing stamp — this only ever sets
+           -- NULL -> NOW(), never un-stamps; it does NOT touch the disposition/ship-wins-over-cancel logic.
+           ship_move_applied_at = COALESCE(
+             ebay_order_lines.ship_move_applied_at,
+             CASE WHEN (EXCLUDED.disposition = 'SHIPPED' OR ebay_order_lines.disposition = 'SHIPPED')
+                       AND ebay_order_lines.disposition IS DISTINCT FROM 'DISMISSED'
+                       AND EXISTS (SELECT 1 FROM items it
+                                    WHERE it.serial = COALESCE(EXCLUDED.matched_serial, ebay_order_lines.matched_serial)
+                                      AND it.status = 'SHIPPED')
+                  THEN NOW() END),
            last_synced         = NOW()`,
         params
       );
