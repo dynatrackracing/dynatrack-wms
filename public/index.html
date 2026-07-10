@@ -615,14 +615,31 @@ select.fi2{cursor:pointer;appearance:none;background-image:url("data:image/svg+x
 </main>
 
 <!-- ═══════ MODALS ═══════ -->
+<!-- Add Location: shelf | rack flow. Every location created here is type RACK with a canonical
+     <SECTION>R<NN>S<NN> name (e.g. AR05S03) so it groups under Section→Rack→Shelf on the Locations
+     page (renderLocGrid gates grouping on type==='RACK' + parseRackName). Non-rack/oddball bins are
+     legacy only — not creatable here by design; that's why there is no type picker (and never a
+     SHIPPED option, which the move logic would treat as sold/outbound). Shelf = add one; Rack = scan
+     its 4–5 shelf labels and create them together. -->
 <div class="modal-bg" id="modal-add-location">
   <div class="modal">
     <h2>Add Location</h2>
-    <div class="fg"><label class="fl">Name</label><input class="fi2" id="new-loc-name" placeholder="e.g. FR14" autocomplete="off"></div>
-    <div class="fg"><label class="fl">Type</label><select class="fi2" id="new-loc-type"><option>SHELF_BIN</option><option>UNLISTED_TOTE</option><option>RETURNS_TOTE</option><option>GENERAL</option><option>FREEZER</option><option>AMBIENT</option><option>STAGING</option></select></div>
+    <div class="seg" role="group" aria-label="Add mode" style="margin-bottom:12px">
+      <button type="button" id="alseg-shelf" class="seg-btn seg-on" onclick="setAddLocMode('shelf')">Add a shelf</button>
+      <button type="button" id="alseg-rack" class="seg-btn" onclick="setAddLocMode('rack')">Add a rack</button>
+    </div>
+    <div class="fg">
+      <label class="fl" id="al-scan-label">Scan or type the shelf label, then Enter</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="fi2" id="al-scan-in" placeholder="e.g. AR05S03" autocomplete="off" autocapitalize="characters" style="flex:1;text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();alCommitScan();}">
+        <button type="button" class="btn btn-s" onclick="alCommitScan()">Add</button>
+      </div>
+    </div>
+    <p id="al-hint" style="font-size:11px;color:var(--muted);margin:2px 0 10px">Format like <span class="mono">AR05S03</span> — section A, rack 05, shelf 03.</p>
+    <div id="al-list-wrap" class="tw" style="max-height:34vh;overflow-y:auto;margin-bottom:10px"><table><tbody id="al-list"></tbody></table></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
       <button class="btn btn-s" onclick="closeModal('modal-add-location')">Cancel</button>
-      <button class="btn btn-p" onclick="addLocation()">Add</button>
+      <button class="btn btn-p" id="al-confirm-btn" onclick="commitAddLocations()">Add shelf</button>
     </div>
   </div>
 </div>
@@ -875,7 +892,91 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 document.querySelectorAll('.modal-bg').forEach(function(m) {
   m.addEventListener('click', function(e) { if (e.target === m) m.classList.remove('open'); });
 });
-function openAddLocation() { document.getElementById('new-loc-name').value=''; openModal('modal-add-location'); setTimeout(function(){ document.getElementById('new-loc-name').focus(); },100); }
+// ── Add Location (shelf | rack) ─────────────────────────────────────────────────────────────
+// Canonical shelf label: one section letter + R + 2-digit rack + S + 2-digit shelf (e.g. AR05S03).
+// Enforced on every add so nothing created here can miss the type==='RACK' + parseRackName grouping.
+var AL_LABEL_RE = /^[A-Z]R\d{2}S\d{2}$/;
+var alMode = 'shelf';        // 'shelf' = create one; 'rack' = accumulate a rack's 4–5 shelves
+var alList = [];             // pending canonical labels to create (all as type RACK)
+
+function openAddLocation() {
+  alList = [];
+  setAddLocMode('shelf');    // resets seg + labels + confirm text, renders the (empty) list
+  document.getElementById('al-scan-in').value = '';
+  openModal('modal-add-location');
+  setTimeout(function(){ document.getElementById('al-scan-in').focus(); }, 100);
+}
+
+// Shelf keeps a single pending label; Rack accumulates. Switching modes starts a clean list so a
+// half-scanned rack can't leak into a shelf add (or vice-versa).
+function setAddLocMode(mode) {
+  alMode = (mode === 'rack') ? 'rack' : 'shelf';
+  alList = [];
+  var rack = alMode === 'rack';
+  document.getElementById('alseg-shelf').classList.toggle('seg-on', !rack);
+  document.getElementById('alseg-rack').classList.toggle('seg-on', rack);
+  document.getElementById('al-scan-label').textContent = rack
+    ? 'Scan each shelf on the rack (4–5), then Enter after each'
+    : 'Scan or type the shelf label, then Enter';
+  document.getElementById('al-hint').innerHTML = rack
+    ? 'Scan every shelf label on the rack — they’re created together. Format like <span class="mono">AR05S03</span>.'
+    : 'Format like <span class="mono">AR05S03</span> — section A, rack 05, shelf 03.';
+  alRender();
+  var inp = document.getElementById('al-scan-in'); if (inp) { inp.value = ''; inp.focus(); }
+}
+
+// Commit the scan-input value (Enter or Add button). Enter-terminated so a manual typist never
+// partial-commits mid-label (no gap-timer auto-flush here, unlike Step-1 scanning).
+function alCommitScan() {
+  var el = document.getElementById('al-scan-in');
+  var code = (el.value || '').trim().toUpperCase();
+  el.value = '';
+  if (code) alAddLabel(code);
+  el.focus();
+}
+
+function alAddLabel(raw) {
+  var name = raw.trim().toUpperCase();
+  if (!AL_LABEL_RE.test(name)) { showToast('Label must look like AR05S03 (section, rack, shelf)', true); return; }
+  if (alList.indexOf(name) >= 0) { showToast(name + ' already added', true); return; }
+  if (alMode === 'shelf') alList = [name];   // shelf = exactly one
+  else alList.push(name);                    // rack = accumulate
+  alRender();
+}
+
+function alRemoveLabel(name) { alList = alList.filter(function(n){ return n !== name; }); alRender(); }
+
+function alRender() {
+  var tb = document.getElementById('al-list');
+  var rack = alMode === 'rack';
+  if (!alList.length) {
+    tb.innerHTML = '<tr><td style="color:var(--muted);text-align:center;padding:14px;font-size:12px">'
+      + (rack ? 'No shelves scanned yet' : 'No shelf yet') + '</td></tr>';
+  } else {
+    tb.innerHTML = alList.map(function(n) {
+      var e = n.replace(/'/g, "\\'");
+      return '<tr><td class="mono" style="color:var(--text)">' + n + '</td>'
+        + '<td style="text-align:right"><button class="btn btn-s" style="font-size:11px;padding:3px 9px" onclick="alRemoveLabel(\'' + e + '\')" title="Remove">✕</button></td></tr>';
+    }).join('');
+  }
+  var btn = document.getElementById('al-confirm-btn');
+  btn.textContent = rack
+    ? (alList.length ? 'Add ' + alList.length + ' shelf' + (alList.length === 1 ? '' : 'ves') : 'Add rack')
+    : 'Add shelf';
+}
+
+// Create every pending label as type RACK. POST is idempotent (ON CONFLICT DO NOTHING), so a
+// re-scanned label is harmless. Refreshes the Locations grid so the new shelves appear grouped.
+async function commitAddLocations() {
+  if (!alList.length) { showToast('Scan a shelf label first', true); return; }
+  var names = alList.slice(), ok = 0;
+  for (var name of names) {
+    try { await api('/locations', { method: 'POST', body: { name: name, type: 'RACK' } }); ok++; } catch(e) {}
+  }
+  closeModal('modal-add-location');
+  showToast(ok === 1 ? 'Added ' + names[0] : 'Added ' + ok + ' of ' + names.length + ' shelves');
+  loadLocations();
+}
 function openAddItem() { document.getElementById('new-item-serial').value=''; openModal('modal-add-item'); setTimeout(function(){ document.getElementById('new-item-serial').focus(); },100); }
 function openAddSeq() { document.getElementById('new-seq-prefix').value=''; openModal('modal-add-seq'); setTimeout(function(){ document.getElementById('new-seq-prefix').focus(); },100); }
 
@@ -1519,18 +1620,6 @@ async function openLocationDetail(name) {
   } catch(e) {
     body.innerHTML = '<div style="color:var(--err);padding:14px">Could not load: ' + e.message + '</div>';
   }
-}
-
-async function addLocation() {
-  var name = document.getElementById('new-loc-name').value.trim().toUpperCase();
-  var type = document.getElementById('new-loc-type').value;
-  if (!name) { showToast('Enter a location name', true); return; }
-  try {
-    await api('/locations', { method: 'POST', body: { name, type } });
-    closeModal('modal-add-location');
-    showToast('Location ' + name + ' added');
-    loadLocations();
-  } catch(e) { showToast('Error: ' + e.message, true); }
 }
 
 async function bulkAddLocations() {

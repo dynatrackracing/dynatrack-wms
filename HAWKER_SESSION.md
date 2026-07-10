@@ -9,6 +9,38 @@ Append-only log of every session. Newest entries go at the TOP. Each session hea
 
 ---
 
+# 2026-07-10
+
+## 16:56 UTC — FEATURE: Add Location rebuilt into a shelf|rack flow so new locations integrate (frontend only)
+
+**One deliverable — fixes the "new locations don't integrate" bug.** Frontend only (`public/index.html`); NO schema, NO server, NO eBay (Rule 25), NO `moves` (Rule 13). Desktop session: this clone was **49 commits behind** origin (last synced stamp `265785d`); `git pull --ff-only` brought it to `6c6c622` (clean) before any work — so the fix was done on real HEAD, not the stale copy. **No `.env` on this desktop → no live DB access**, so no data backfill this session (see below).
+
+### Root cause (diagnosed from HEAD source, Rule 1)
+`renderLocGrid` groups a location under Section→Rack→Shelf **only if `type==='RACK'` AND `parseRackName` matches** (`^[A-Z]R\d{2}S\d{2}$` or spelled-out). The old Add Location modal offered a Type dropdown defaulting to **`SHELF_BIN`** (no RACK option) and a free-text name box (placeholder `FR14`, not rack-shaped). So every added location got a non-RACK type **and** usually a non-parsing name → dumped into "Other / Ungrouped." Same class of mis-type that migrations 0007/0008 fixed for Section A. `POST /api/locations` accepts any `type` (defaults GENERAL, no CHECK) — it never rejected the bad type.
+
+### Change (public/index.html)
+- Replaced `#modal-add-location` with a **shelf|rack** flow: segmented `setAddLocMode('shelf'|'rack')`; one scan/type input `#al-scan-in`; a removable pending list (`alRender`/`alRemoveLabel`); confirm `commitAddLocations`.
+- Every label uppercased + validated to `^[A-Z]R\d{2}S\d{2}$` (`AL_LABEL_RE`, in `alAddLabel`) and created as **`type:'RACK'`** → always integrates. **Shelf** = one; **Rack** = accumulate its 4–5 shelf labels then create together. Bad shape → toast, never created.
+- **Enter-terminated** commit (`alCommitScan`), deliberately NO 80ms gap-timer here (a manual typist must not partial-commit mid-label — unlike Step-1 batch scanning). Scanner sends Enter suffix (Rule 22).
+- **No type picker → SHIPPED can never be chosen** (a SHIPPED-type destination flips scanned items to sold/outbound via the move logic).
+- Removed the now-orphaned free-text `addLocation()` + `#new-loc-name`/`#new-loc-type` (dead after the button was rewired).
+
+### Verify (Rule 17 — static only; cannot run the app/scanner/DB from this desktop)
+`node`/vm parse of the single inline `<script>` block: **OK**. `<div>` balance **358/358**. No stale refs to removed ids/functions; no identifier collisions (each new fn defined once). **Functional test (scan-and-create loop + `/api/health`) MUST be done by Ry on the tablet post-deploy** — flagged, not done here.
+
+### The 58 already-added rows (NOT touched — architect chose "fix forward only")
+Live count was ~605 vs the 547 baseline → ~58 locations added through the broken form, now sitting in "Other." Left the live data alone (needs a gated retype on the laptop where `DATABASE_URL_RW` lives). **Backfill diagnosis for the next session:** near-certainly **canonical names + wrong type** (the form uppercased/trimmed names and users were adding rack shelves; the grouping needs both type AND name, and these render as clean rows in "Other" rather than erroring). One query green-lights it — `SELECT name, type, created_at FROM locations WHERE type <> 'RACK' AND name ~ '^[A-Z]R[0-9]{2}S[0-9]{2}$' ORDER BY created_at DESC;` — if the rows return with rack-shaped names, the backfill is the exact 0008 mirror: `UPDATE locations SET type='RACK' WHERE type <> 'RACK' AND name ~ '^[A-Z]R[0-9]{2}S[0-9]{2}$'` (names unchanged → items.location FK + moves untouched; reversible). Only if any row's name does NOT match → that one is a genuine non-rack (tote/oddball); exclude it and leave as-is. Gate: dry-run rowcount → "commit". After it, update the Rule-27 baseline 547 → verified N.
+
+### Scope / flags (Rule B)
+- Admin **bulk** Add Location form (`bulkAddLocations`, `#bulk-type`) still has the old type dropdown + no name validation — same latent bug, different entry point. Left unchanged to keep this surgical; worth a follow-up.
+- `POST /api/locations` still defaults `type='GENERAL'` with no CHECK — root enabler; frontend now always sends explicit type, but hardening the endpoint (add CHECK, or default RACK) is a good follow-up.
+- Carried OPEN (unchanged): 🔐 rotate postgres password (chat-leaked + in `.env`); `addToBatch` 409→"NEW" scan-UI; ZZ9001-3 verify-artifact purge; `moves` history queried hyphen-insensitively for stripped/archived items.
+
+### Files
+`public/index.html`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. No schema/server change. **Ry: re-upload CLAUDE.md + HAWKER_RULES.md (if changed) — at minimum HAWKER_SESSION.md + HAWKER_CHANGELOG.md + SNAPSHOT_FRONTEND.md — to the claude.ai project knowledge so the next briefing isn't stale (Rule 39).**
+
+---
+
 # 2026-07-07
 
 ## 18:15 UTC — FIX: returns re-ship bug closed (Phase-1 self-heal stamp + one-time 608-row backfill)
