@@ -164,3 +164,15 @@ The standard is prefix plus digits with **no dash**. In the 2026-05-29 prod expo
 | Units **share a base and differ only by trailing letters** (e.g. `TZ1001A`…`TZ1001J`, label `TZ1001`) | **Wrong-item risk, and it's delayed.** All the units normalize to `TZ1001`. While 2 or more are STORED, sales are ambiguous and nothing moves. **Once only one is left STORED, every SHIPPED line still in eBay's 90-day window is re-matched on the next sync** (Phase 1 recomputes `matched_serial` for previously unmatched lines, `server.js:1018`). That ships the last unit even though it hasn't sold. Manual ship-scans of the other units bring that moment closer. |
 
 **Bottom line:** the sync can only mark a TZ item shipped when a group label normalizes to exactly one STORED TZ serial. Safe conditions are: (a) the TZ listings are on a third eBay account, or (b) no group Custom Label equals any TZ unit serial after stripping trailing letters, and TZ serials **don't end in letters**. If neither can be guaranteed, the code fix is a later, separate change: exclude `TZ%` serials from the reconcile candidate pool, or apply the `listedSerialKeys` multi-serial rule. **Not changed here, per instruction.**
+
+### How serials are created (TZ format `TZ` + 5 digits, e.g. `TZ12345`), report only
+- **Typed or scanned. Never generated, never checked against a prefix list.** The serial is whatever the physical label's barcode says. HawkerWMS does not issue serials anywhere in its UI.
+- **Create paths:**
+  - Scan & Move: an unknown scan becomes a NEW row (`addToBatch`, `index.html:1332`) and is created on Confirm by `POST /api/move/batch` (`server.js:434`). The server only trims (`:441`).
+  - Inventory "Add Item": `addItem` (`index.html:1679`) → `POST /api/items` (`server.js:231`), also trim only.
+  - `POST /api/intake` (`server.js:394`) exists but the UI doesn't call it.
+  - None of these validate format or prefix.
+- **`sequences` table / Admin "Prefixes" list:** vestigial. No frontend code calls `POST /api/sequences/next/:prefix`. The Admin panel only lists prefixes and edits `next_num`. Its preview shows `PREFIX-0001` (dash, 4 digits) at `index.html:2040`, which is **not** the real serial format. **Adding TZ there is not needed** for receiving.
+- **The only prefix-shaped check** is `VALID_SERIAL = /^[A-Z]{2,4}\d+$/` (`index.html:2179`), and it's display-only: Inventory Health's "Incomplete" bucket. `TZ12345` passes it.
+- **eBay matching:** `TZ12345` ends in a digit, so `normalizeSkuKey` leaves it unchanged. The group-label risk above still applies.
+- **Conclusion: nothing has to be added anywhere for receiving to create TZ units.** One general note, not specific to TZ: scan input isn't uppercased, so a hand-typed `tz12345` would be stored lowercase. The viewer filter (`UPPER(TRIM(serial))`) still shows it.
