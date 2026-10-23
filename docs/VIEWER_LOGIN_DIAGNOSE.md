@@ -131,3 +131,36 @@ SELECT COALESCE(SUBSTRING(UPPER(TRIM(serial)) FROM '^[A-Z]+'), '(non-letter)') A
 
 - Once AP units are scanned into the WMS, the office will see them everywhere: Dashboard counts, Inventory, Locations counts. Unless they're listed on the Dynatrack/Autolumen eBay stores, they'll also show up in Inventory Health's **WMS-Only** bucket. That bucket already has a Hide feature.
 - Order reconcile matching uses `normalizeSkuKey`, which strips trailing letters. An eBay SKU from another store that normalizes to an `AP-…` serial could ship-move it. That's unlikely, but if Tanzil sells AP units on eBay, the owner should check which account they're listed under.
+
+---
+
+## Addendum (2026-10-23): owner decisions, TZ prefix, eBay order matching
+
+**Owner approved** the design, including both deviations. Decisions:
+- The prefix is **`TZ`**, not `AP-`.
+- The viewer sees TZ units in every status except archived/scrapped.
+- The login log is a DB table (`viewer_logins`).
+- The live TZ check has to be run and reported **before** building.
+- The final verify is the office manager's normal work, so there are **no test writes to prod**.
+- **Push everything together after hours.** Don't push Phase 1 on its own.
+
+### Separator format: undashed, so `VIEWER_SKU_PREFIX=TZ`
+The standard is prefix plus digits with **no dash**. In the 2026-05-29 prod export (3,380 items): **2,593 undashed** (`MOD20177`, `FUS2980`), **284 dashed**, which are legacy. The 2026-06 hyphen-dedup was retiring those, and its comment says the remaining labels are "still-dashed" (`server.js:197`). TZ units should be labelled `TZ1234`, so the prefix is **`TZ`**. `LIKE 'TZ%'` also catches a stray `TZ-1234`.
+**TZ clash (proxy only):** 0 serials start with `TZ`, dash-stripped included, in the 2026-04-02 seed or the 2026-05-29 export. The live re-check is still pending (see Q5; swap `AP` for `TZ` in those queries).
+
+### How `/api/ebay/orders` and `/api/ebay/:store/orders` match orders to items (report only, sync not changed)
+- **Which stores are fetched:** only the stores in the `STORES` registry, Dynatrack and Autolumen. Each one's `GetOrders` is called with that store's own credentials. **If TZ units are listed on an eBay account other than those two, this sync never sees those orders and can't touch TZ items at all.** Owner, please confirm which account the TZ listings are on.
+- **Key:** each order line's eBay `SKU` (the listing's Custom Label), from `line.sku`. It is normalized by `normalizeSkuKey` (`server.js:910`): trim, uppercase, then strip any **trailing run of letters and `*`**.
+- **Candidates:** all items with `status='STORED' AND archived_at IS NULL`, keyed by the same normalization of `serial` (`server.js:945-950`).
+- **Rule:** an **exact equality** of the two normalized keys. **Exactly 1** candidate → `matched_serial`. **0 or more than 1** → no match (`location_unknown`), so nothing ever ships (`server.js:979-983`). The Inventory Health multi-serial tokenizer (`listedSerialKeys`, `index.html:2152`) is **not** used by the sync.
+- **Ship:** Phase 2 (`server.js:1059-1103`) moves to SHIPPED **only** a STORED item whose `matched_serial` sits on a SHIPPED line that has not been applied yet.
+
+**Can a group Custom Label (up to 10 units) ship the wrong TZ item?** It depends on the label text:
+
+| Label vs. unit serials | Outcome |
+|---|---|
+| Label is **not** equal to any unit serial once both are normalized (e.g. label `TZ-GROUP-07` or `TZLOT07`, units `TZ1001`…`TZ1010`) | **Safe.** 0 candidates, so lines appear in the Pick List as location-unknown and nothing is ever auto-shipped. |
+| Label **equals one unit's serial** (e.g. label `TZ1001`, units `TZ1001`…`TZ1010`) | **Wrong-item risk.** Every sale of the group matches `TZ1001` while it's STORED, and the first sync ships `TZ1001` whatever unit actually left. Later sales find `TZ1001` no longer STORED → 0 candidates → no further moves. |
+| Units **share a base and differ only by trailing letters** (e.g. `TZ1001A`…`TZ1001J`, label `TZ1001`) | **Wrong-item risk, and it's delayed.** All the units normalize to `TZ1001`. While 2 or more are STORED, sales are ambiguous and nothing moves. **Once only one is left STORED, every SHIPPED line still in eBay's 90-day window is re-matched on the next sync** (Phase 1 recomputes `matched_serial` for previously unmatched lines, `server.js:1018`). That ships the last unit even though it hasn't sold. Manual ship-scans of the other units bring that moment closer. |
+
+**Bottom line:** the sync can only mark a TZ item shipped when a group label normalizes to exactly one STORED TZ serial. Safe conditions are: (a) the TZ listings are on a third eBay account, or (b) no group Custom Label equals any TZ unit serial after stripping trailing letters, and TZ serials **don't end in letters**. If neither can be guaranteed, the code fix is a later, separate change: exclude `TZ%` serials from the reconcile candidate pool, or apply the `listedSerialKeys` multi-serial rule. **Not changed here, per instruction.**
