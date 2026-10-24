@@ -2,7 +2,7 @@
 
 > Orientation map of the database. Regenerate at session end if `db/schema.sql` or a `db/migrations/` file changed (HAWKER_RULES rule 38).
 > Generated 2026-05-29 from `db/schema.sql` **+ applied migrations in `db/migrations/`**. PostgreSQL (Railway).
-> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31), **`0006-sessions.sql`** (2026-06-03), **`0007-rack-type.sql`** (2026-06-05 — rack-pattern SHELF_BIN → RACK + delete 1 malformed bin + rename 9 spelled-out section-O names to compact), **`0008-section-a-rack-retype.sql`** (2026-06-05 — Section A's 20 mis-typed `AR##S##` UNLISTED_TOTE → RACK).
+> `db/schema.sql` is the fresh-provision seed (run once; **not** re-runnable — rule 28). **Live schema changes are additive migration files (rule 9); `schema.sql` is intentionally NOT edited in place**, so the live DB = `schema.sql` + every `db/migrations/NNNN-*.sql` applied in order. Migrations applied: **`0001-ebay-order-lines.sql`**, **`0002-items-intake-date.sql`** (2026-05-29), **`0003-items-archived.sql`** (2026-05-30), **`0004-orderline-ship-move-applied.sql`**, **`0005-health-omissions.sql`** (2026-05-31), **`0006-sessions.sql`** (2026-06-03), **`0007-rack-type.sql`** (2026-06-05 — rack-pattern SHELF_BIN → RACK + delete 1 malformed bin + rename 9 spelled-out section-O names to compact), **`0008-section-a-rack-retype.sql`** (2026-06-05 — Section A's 20 mis-typed `AR##S##` UNLISTED_TOTE → RACK), **`0009-viewer-role.sql`** (2026-10-23 — `sessions.role` + `viewer_logins`; **written on branch `viewer-login`, NOT YET APPLIED to the live DB** — apply it with the merge; the server degrades gracefully until then).
 
 ## Tables
 
@@ -94,7 +94,17 @@ Persistent auth tokens — **replaced the in-memory `sessions` Map** in server.j
 | `username` | TEXT NOT NULL | |
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | |
 | `expires_at` | TIMESTAMPTZ NOT NULL | login = `NOW()+12h`; **`touchSession` slides it `+12h` on each authed request** (read-and-slide `UPDATE … WHERE token=$1 AND expires_at>NOW() RETURNING username`). Expired/unknown → 401. Hourly sweep `DELETE WHERE expires_at<=NOW()`. |
-| | | Index `sessions_expires_at` on `(expires_at)`. No new env var. |
+| `role` | TEXT NOT NULL DEFAULT `'admin'` | ***added by migration `0009-viewer-role.sql` (2026-10-23).*** `'admin'` \| `'viewer'`. No CHECK. A **constant** default ⇒ metadata-only in PG11+ (no table rewrite) and every pre-existing session became `'admin'`, so **the migration logged nobody out**. `touchSession` now returns `{username, role}`; `requireAuth` **403s `role='viewer'`**. Viewer sessions are the only rows that ever carry `'viewer'`, and their token is `'v_'+64 hex` (an admin token is pure hex, so the prefix is unambiguous). Server degrades to a literal `'admin'` while this column is absent, so deploy/migration order doesn't matter. |
+| | | Index `sessions_expires_at` on `(expires_at)`. Viewer env vars (`WMS_VIEWER_PASSWORD`, `WMS_VIEWER_USERNAME`, `VIEWER_SKU_PREFIX`) — see SNAPSHOT_ROUTES. |
+
+### `viewer_logins` — *added by migration `0009-viewer-role.sql` (2026-10-23); NOT in `schema.sql`*
+The owner-requested viewer login log: one row per **successful** viewer login. Written fire-and-forget by `POST /api/viewer/login` (a failed log never blocks the login). Starts empty. **Not read by any route** — query it directly when the owner wants the access history.
+| Column | Type | Notes |
+|---|---|---|
+| `id` | SERIAL **PK** | |
+| `at` | TIMESTAMPTZ NOT NULL DEFAULT NOW() | login time |
+| `ip` | TEXT | first `x-forwarded-for` hop (Railway sits behind a proxy), else the socket address; truncated to 64 chars; null if neither is available |
+| | | Index `viewer_logins_at` on `(at DESC)`. |
 
 ## Trigger
 - `touch_updated_at()` → `items_updated_at` BEFORE UPDATE on `items` keeps `updated_at` current.

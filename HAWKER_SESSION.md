@@ -1,11 +1,67 @@
 <!-- SYNC STAMP -->
 LAST PUSHED COMMIT: 66fc403 @ 2026-07-10 16:56 UTC (FEATURE DEPLOYED — Add Location rebuilt into a shelf|rack flow so new locations integrate. FRONTEND ONLY [public/index.html]; no schema/server/eBay/moves change. Root cause: old modal defaulted type SHELF_BIN + free-text non-rack name → new rows fell to "Other/Ungrouped" because renderLocGrid groups only on type==='RACK' + parseRackName [^[A-Z]R\d{2}S\d{2}$]. New flow: Shelf=add one, Rack=scan its 4–5 shelf labels; every label uppercased + validated to that regex and created as type:'RACK'; SHIPPED never offerable; Enter-terminated [no gap-timer]; removed orphaned free-text addLocation()+#new-loc-name/#new-loc-type. VERIFY static only [no app/scanner/DB on this desktop]: inline JS parses, div balance 358/358, no stale refs — Ry MUST tablet-verify scan-and-create + /api/health post-deploy. NOTE: this desktop clone was 49 commits behind; pulled 73f140c→6c6c622 before work. NOT done [architect chose fix-forward]: retype the ~58 already-added mis-typed rows [live ~605 vs 547 baseline] — gated laptop backfill, 0008 mirror; likely canonical-name+wrong-type. FLAGS: Admin bulk Add Location same latent bug; POST /api/locations type=GENERAL default has no CHECK. OPEN carried: 🔐 ROTATE postgres password, addToBatch 409 UX, ZZ9001-3 verify-artifact purge, hyphen-insensitive moves history.)
 STAMP UPDATED BY: Claude Code (Opus 4.8, desktop), session 16:56 UTC 2026-07-10
+
+⚠️ `main` IS STILL AT `66fc403` — the stamp above is unchanged and remains the canonical/deployed state. Rule 40's stamp tracks `origin/main`, so a branch push must NOT overwrite it.
+BRANCH `viewer-login` @ 2026-10-24 01:14 UTC — Phase 2 of the view-only contractor login (viewer role, central allowlist gate, `public/viewer.html`, migration `0009-viewer-role.sql`, first test harness). **NOT merged, NOT deployed, migration NOT applied.** The owner merges after hours, sets `WMS_VIEWER_PASSWORD` in Railway, applies 0009, and runs the verify list in the session entry below. Until then production is byte-for-byte the 2026-07-10 deploy.
 <!-- END SYNC STAMP -->
 
 # HAWKER_SESSION.md
 
 Append-only log of every session. Newest entries go at the TOP. Each session header: `## HH:MM UTC — Description`. Each day gets a `# YYYY-MM-DD` header.
+
+---
+
+# 2026-10-24
+
+## 01:14 UTC — FEATURE (branch `viewer-login`, NOT merged): view-only contractor login, Phase 2
+
+**One deliverable.** Phase 2 of the outside-contractor (Tanzil) view-only login, built to the Phase-1 spec in `docs/VIEWER_LOGIN_DIAGNOSE.md` (branch commits `06e1c28`/`4d1f3a5`/`312efbe`, read in full first). **Committed and pushed to the BRANCH ONLY — never to `main`, which auto-deploys while the warehouse is working.** `DATABASE_URL_RO` only this session (owner instruction): every DB touch was a `SELECT`, **`DATABASE_URL_RW` was not used and no migration was applied.** Clone was even with `origin/main` at `7db7ec1` and clean before checkout; the location backfill was explicitly deferred to another session and was NOT touched.
+
+### Step 1 — live TZ check (read-only, `DATABASE_URL_RO`) → CLEAR, 0 collisions
+`UPPER(TRIM(serial)) LIKE 'TZ%'` → **0**; dash-stripped `LIKE 'TZ%'` → **0**; active TZ → **0**. Top-20 prefixes: MOD 2775, ENG 1032, INT 940, FUS 532, **RYN 481**, EXT 283, ECU 184, CLU 111, (non-letter) 67, **TIPM 16**, E 5, NG 4, NT 4, HTTPS 3, PS 3, ZZ 3, EOD 2, CR 1, EN 1, ENGG 1. Nothing starts with or normalizes to `TZ`, so the prefix is safe and the proxy finding in the doc (§5 / addendum) is confirmed against live data. Also observed, **not acted on**: `items` is now **6,460 total / 6,241 active** (3,169 STORED + 3,072 SHIPPED) vs the Rule-27 baseline of 3,390 — and `sessions.role` / `viewer_logins` did not exist (so 0009 is genuinely new).
+
+### Step 2 — what was built
+**`db/migrations/0009-viewer-role.sql`** (new, additive, idempotent, **NOT APPLIED**): `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'` (constant default ⇒ metadata-only in PG11+, no table rewrite, **every existing session becomes `admin` so nobody is logged out — the tablet keeps its session**) + `CREATE TABLE IF NOT EXISTS viewer_logins (id, at, ip)` + index. Rollback written into the file. `items`/`locations`/`moves`/`sequences`/`ebay_order_lines` untouched.
+
+**`server.js`** — five additions, nothing existing re-shaped:
+1. **Viewer config, read lazily** (not into a const, so it's togglable by env + restart and testable): `WMS_VIEWER_PASSWORD` (**no default — unset ⇒ 503, viewer disabled**), `WMS_VIEWER_USERNAME` (default `viewer`, refused if it equals `WMS_USERNAME`), `VIEWER_SKU_PREFIX` (default `TZ`). **Deliberate deviation from the doc's §6.2:** unset *or* set-but-empty both fall back to `TZ` — an empty env var must never silently widen the viewer to the whole warehouse, so there is no way to configure "show everything".
+2. **`touchSession` now returns the row `{username, role}`** (was the username string; both call sites updated, `/api/me`'s response shape deliberately unchanged). **`requireAuth` 403s any `role='viewer'` session** — the second layer, so even a route wrongly added to the allowlist stays unreachable for a viewer.
+3. **Central gate `app.use('/api', viewerGate)`**, registered before every route. A token not starting with `v_` → `next()` on the first line, so **admin traffic takes zero extra DB queries and behaves exactly as before**. For a `v_` token: any method other than GET/HEAD is **403 before the allowlist is consulted** (only `POST /api/viewer/{login,logout}` excepted), and any GET outside `{/api/health, /api/viewer/me, /api/viewer/items}` is 403 — **so routes added in future are denied by default**. Path comparison is lowercased + trailing-slash-stripped so neither case nor a `/` opens a hole.
+4. **Viewer routes:** `POST /api/viewer/login` (separate endpoint — **`/api/login` is not touched**; token `'v_'+64 hex`, `role='viewer'`, one `viewer_logins` row with the first `x-forwarded-for` hop), `POST /api/viewer/logout` (scoped `AND role='viewer'`, so it can't delete an admin session), `GET /api/viewer/me`, `GET /api/viewer/items`. `requireViewer` guards them and refuses admin sessions.
+5. **The prefix filter runs in SQL, never in the page** — `buildViewerItemsQuery` (exported, so it's unit-testable without a DB): `SELECT serial, location, status, updated_at FROM items WHERE archived_at IS NULL AND UPPER(TRIM(serial)) LIKE $1 ESCAPE '\'` (+ `AND serial ILIKE $2 ESCAPE '\'` when searching), `ORDER BY serial`, `LIMIT` hard-capped at 1000. `%`/`_` are escaped in both the prefix and the search box, so a wildcard can't widen the window. **No status filter** → TZ units in every status; `archived_at IS NULL` hides archived/scrapped. Case-insensitive, so a hand-typed `tz12345` and a stray `TZ-12345` both show.
+
+**Deploy-order safety (important, and not in the original spec).** A cached probe of `information_schema` tells the server whether 0009 has landed. Before the migration: `touchSession`'s `RETURNING` degrades to a literal `'admin'`, so **admin login/sessions/the tablet are byte-for-byte unaffected**, and viewer login returns a clean **503 "not available yet"** instead of a 500. After it: viewer login works. So the merge and the migration may land in **either order** without breaking the warehouse. A positive result is cached for the process; a negative one is re-probed every ~30s, so applying 0009 under a running service starts working without a redeploy.
+
+**`public/viewer.html`** (new, served at `/viewer` by a route registered before the SPA catch-all): standalone phone-friendly read-only page — **no edit controls of any kind**, zero shared code with `index.html`, same theme tokens (Rule 21). Columns Serial · Location · Status (badge) · Last updated; debounced search on serial; token in its **own** `localStorage` key `wms_viewer_token` so it can never collide with the office/tablet `wms_token`; login sends no token header; 401/403 clears the token and returns to sign-in. **`public/index.html` was NOT touched** (still 358/358 divs).
+
+**`test/viewer.test.js` + `"test": "node --test test/"`** — the repo's first test harness, `node:test` only, **no new dependencies**. A fake pool is injected so the suite needs no database and asserts against the real SQL the routes build. To make that possible, `app.listen` + the startup `SELECT 1` probe + the hourly session sweep now sit inside `if (require.main === module)` and `server.js` has a `module.exports` (flagged in the doc's §6.8 and approved).
+
+### Step 2 verify — all green
+- **`npm test` → 21/21 pass.** Covers the five required areas: role lands in the session on viewer login (+ `requireAuth` refuses a viewer session, and still admits an admin one unchanged); the allowlist denies 15 real routes *and* a route that doesn't exist yet, and isn't fooled by case or a trailing slash; **4 write methods × 21 write paths = 84 refusals with not one write statement reaching the DB**; the prefix filter is in the SQL with search ANDed on (never replacing it), wildcards escaped, empty/unset prefix still `TZ%`, only the four columns selected, cap unraisable; viewer login 503s for every password when `WMS_VIEWER_PASSWORD` is unset.
+- **`node --check server.js` OK.** `viewer.html`: inline JS parses, tags balanced 24/24 divs, every `getElementById` target exists. `index.html` re-checked unchanged (358/358).
+- **Local run** (`node server.js`, no `DATABASE_URL`, nothing near production): `/viewer` serves the new page and `/` still serves the SPA; viewer login 503 "not enabled" with the env var unset and 503 "not available yet" with it set but 0009 absent (the degradation path, confirmed live); 6 viewer GETs and 6 viewer writes all 403 — including `GET /api/ebay/orders`, the GET that ships items.
+- **The real viewer SQL run against production read-only**: all five shapes execute against the live schema (so it's valid PG, not just fake-pool-valid) — TZ → 0 rows, `_` prefix → 0 rows (escaping works), control prefix `MOD` → 1000 rows returning exactly `serial, location, status, updated_at`.
+
+### eBay order sync — NOT changed (recorded per instruction)
+Per the owner, the sync was left completely alone. The two rules that keep TZ safe inside it: **TZ unit serials are `TZ` + digits only, never a trailing letter** (so `normalizeSkuKey`, which strips a trailing run of letters/`*`, leaves them unchanged and can't merge two units); and **TZ eBay Custom Labels are group codes like `TZ-PCM-0001`, which can never equal a serial** (normalized `TZPCM0001` ≠ `TZ12345` ⇒ 0 candidates ⇒ the line lands in the Pick List as location-unknown and nothing is ever auto-shipped). Keep both true and the sync cannot ship a TZ unit; break either and the wrong-item risk in the doc's addendum table applies.
+
+### ⏭ VERIFY LIST FOR THE OWNER (after the merge)
+Before any of it: set **`WMS_VIEWER_PASSWORD`** in Railway (and apply **0009**; either order with the deploy).
+1. Normal admin login + **one real scan/move by the office manager** on the tablet (no test writes to prod).
+2. Viewer login at `/viewer` loads only the viewer page and its data.
+3. **10 existing routes and 5 write endpoints refused for the viewer, with row counts unchanged.**
+4. The viewer response contains **no non-TZ serials**.
+5. Viewer refused when `WMS_VIEWER_PASSWORD` is unset.
+
+### Scope / flags (Rule B)
+- **Location backfill NOT touched** (deferred by instruction). `DATABASE_URL_RW` not used at all; **0009 not applied**.
+- Still open, unchanged: 🔐 **rotate the privileged `postgres` password** (chat-leaked + in `.env`); `addToBatch` 409 → "NEW" scan-UI; `ZZ9001-3` verify-artifact purge; `moves` history queried hyphen-insensitively; Admin **bulk** Add Location's latent mis-type bug; `POST /api/locations` `type='GENERAL'` default has no CHECK.
+- Noted, not fixed: viewer search is a plain escaped `ILIKE` on `serial`, so searching `TZ12345` won't find a dashed `TZ-12345` (undashed is the standard, so this is an anomaly-only gap); `items` is ~6,460 vs the Rule-27 baseline 3,390 — that rule needs a re-baseline in a future session.
+- **Rule 40 note:** the sync stamp's `LAST PUSHED COMMIT` was deliberately left at `66fc403` because `main` did not move. The branch is recorded separately in the stamp block.
+
+### Files (branch `viewer-login` only)
+`server.js`, `public/viewer.html` (new), `db/migrations/0009-viewer-role.sql` (new), `test/viewer.test.js` (new), `package.json`, `SNAPSHOT_ROUTES.md`, `SNAPSHOT_SCHEMA.md`, `SNAPSHOT_FRONTEND.md`, `HAWKER_SESSION.md`, `HAWKER_CHANGELOG.md`. `public/index.html` and `db/schema.sql` NOT touched. **Ry: re-upload the memory files + SNAPSHOT_* to the claude.ai project knowledge (Rule 39) — and note the stamp still reads `66fc403` on purpose.**
 
 ---
 

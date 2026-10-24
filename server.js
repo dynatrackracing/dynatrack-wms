@@ -18,51 +18,136 @@ const PORT = process.env.PORT || 3000;
 const WMS_USERNAME = process.env.WMS_USERNAME || 'admin';
 const WMS_PASSWORD = process.env.WMS_PASSWORD || '';
 
+// ── Viewer (outside contractor, view-only) config ────────────────────────────
+// Set in Railway → Variables:
+//   WMS_VIEWER_PASSWORD  (required to enable viewer login — NO DEFAULT. Unset ⇒ viewer disabled, 503)
+//   WMS_VIEWER_USERNAME  (default: viewer — refused if it collides with WMS_USERNAME)
+//   VIEWER_SKU_PREFIX    (default: TZ — the serial prefix the viewer is allowed to see)
+// Read LAZILY (per request) rather than into a const, so the viewer can be enabled/disabled by an
+// env change + restart and so the tests can flip it. The ADMIN consts above are deliberately
+// untouched — existing login behaviour must not change at all.
+const VIEWER_ROLE = 'viewer';
+const viewerPassword = () => process.env.WMS_VIEWER_PASSWORD || '';
+const viewerUsername = () => process.env.WMS_VIEWER_USERNAME || 'viewer';
+// Unset OR set-but-empty both fall back to 'TZ'. Deliberate deviation from the diagnose doc's
+// §6.2 ("set-but-empty means all units"): an empty env var must never silently widen the viewer's
+// window to the whole warehouse. There is no way to configure "show everything".
+const viewerPrefix = () => (process.env.VIEWER_SKU_PREFIX || '').trim() || 'TZ';
+
 // Persistent token store: the `sessions` table (migration 0006) — survives deploys/restarts (the old
 // in-memory Map dropped the tablet's login on every restart). Same random-hex token + 12h SLIDING
 // expiry + x-wms-token header + route contracts; just DB-backed via the existing `pool` (defined below).
 // touchSession: ONE atomic read-and-slide — a live token advances its 12h window (sliding expiry on
 // activity) and returns its username; an expired/unknown token → null. Used by requireAuth + /api/me.
+// Now also returns the session's ROLE (migration 0009) — 'admin' for every pre-existing session.
+// Returns the session row { username, role } or null. (Was: the username string.)
 async function touchSession(token) {
   if (!token) return null;
+  // Deploy-order safety: if migration 0009 hasn't been applied yet, `role` doesn't exist. Fall back
+  // to a literal 'admin' so admin traffic is byte-for-byte unaffected whichever lands first.
+  const roleCol = (await viewerSchema()).hasRole ? 'role' : `'admin'::text AS role`;
   const { rows } = await pool.query(
-    "UPDATE sessions SET expires_at = NOW() + INTERVAL '12 hours' WHERE token = $1 AND expires_at > NOW() RETURNING username",
+    `UPDATE sessions SET expires_at = NOW() + INTERVAL '12 hours'
+      WHERE token = $1 AND expires_at > NOW() RETURNING username, ${roleCol}`,
     [token]
   );
-  return rows.length ? rows[0].username : null;
+  return rows.length ? rows[0] : null;
 }
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
 async function requireAuth(req, res, next) {
   try {
-    const username = await touchSession(req.headers['x-wms-token']);
-    if (!username) return res.status(401).json({ error: 'Unauthorized' });
-    req.wmsUser = username;
+    const s = await touchSession(req.headers['x-wms-token']);
+    if (!s) return res.status(401).json({ error: 'Unauthorized' });
+    // SECOND LAYER (defence in depth): the admin check itself refuses viewer sessions. Even if a
+    // route were wrongly added to the viewer GET allowlist — e.g. /api/ebay/orders, a GET that
+    // SHIPS ITEMS — a viewer token still cannot reach it.
+    if (s.role === VIEWER_ROLE) return res.status(403).json({ error: 'Forbidden' });
+    req.wmsUser = s.username;
+    req.wmsRole = s.role;
     next();
   } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
 // ── Database ──────────────────────────────────────────────────────────────────
-const pool = new Pool({
+// `let`, not `const`, so the test harness can inject a fake pool (see __setPoolForTests).
+let pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL?.includes('railway') ? { rejectUnauthorized: false } : false,
 });
 
-pool.query('SELECT 1').then(() => {
-  console.log('✓ PostgreSQL connected');
-}).catch(err => {
-  console.error('✗ PostgreSQL connection failed:', err.message);
-});
-
-// Reclaim expired session rows hourly (expired tokens are already rejected by touchSession's
-// `expires_at > NOW()` guard; this sweep just frees rows). DB-backed (was an in-memory Map sweep).
-setInterval(() => {
-  pool.query('DELETE FROM sessions WHERE expires_at <= NOW()').catch(e => console.error('[sessions] cleanup failed:', e.message));
-}, 60 * 60 * 1000);
+// ── Migration-0009 capability probe ───────────────────────────────────────────
+// The deploy and migration 0009 can land in either order (Railway auto-deploys on push to main),
+// so nothing may assume the new column/table exists. One cached probe answers both questions.
+// A positive result is cached for the life of the process; a negative one is re-probed at most
+// every 30s, so applying 0009 under a running service starts working without a redeploy.
+let _schemaCache = { hasRole: false, hasLog: false, at: 0, ok: false };
+async function viewerSchema() {
+  if (_schemaCache.ok) return _schemaCache;
+  if (Date.now() - _schemaCache.at < 30_000) return _schemaCache;
+  try {
+    const { rows } = await pool.query(`
+      SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'sessions' AND column_name = 'role')  AS has_role,
+             EXISTS(SELECT 1 FROM information_schema.tables
+                     WHERE table_name = 'viewer_logins')                      AS has_log`);
+    const hasRole = !!rows[0].has_role, hasLog = !!rows[0].has_log;
+    _schemaCache = { hasRole, hasLog, at: Date.now(), ok: hasRole && hasLog };
+  } catch (e) {
+    // Probe failed (DB down, or no DB at all under test) — assume the old shape and retry later.
+    _schemaCache = { hasRole: false, hasLog: false, at: Date.now(), ok: false };
+  }
+  return _schemaCache;
+}
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Viewer gate (ALLOWLIST-ONLY) ──────────────────────────────────────────────
+// Registered BEFORE every /api route, so it cannot be bypassed and future routes are DENIED BY
+// DEFAULT. Viewer tokens are 'v_' + 64 hex; an admin token is pure hex and can never start with
+// 'v_', so admin traffic short-circuits on the first line — no extra DB query, no behaviour change.
+//
+// The two POSTs below are the viewer's ONLY non-GET paths, and neither touches inventory:
+//   /api/viewer/login  → INSERT sessions (its own session) + INSERT viewer_logins (the login log)
+//   /api/viewer/logout → DELETE its own session row
+// Everything else: writes are refused by METHOD before the allowlist is even consulted.
+const VIEWER_GET_ALLOWLIST  = ['/api/health', '/api/viewer/me', '/api/viewer/items'];
+const VIEWER_POST_ALLOWLIST = ['/api/viewer/login', '/api/viewer/logout'];
+
+function viewerGate(req, res, next) {
+  const token = req.headers['x-wms-token'];
+  if (!token || !String(token).startsWith('v_')) return next();   // admin/anonymous — untouched
+
+  // Normalise: mounted middleware strips the mount path, Express routing is case-insensitive by
+  // default, and a trailing slash must not open a hole.
+  const full = ((req.baseUrl || '') + (req.path || '')).toLowerCase().replace(/\/+$/, '') || '/';
+  const method = (req.method || '').toUpperCase();
+
+  if (method !== 'GET' && method !== 'HEAD') {
+    if (VIEWER_POST_ALLOWLIST.includes(full) && method === 'POST') return next();
+    return res.status(403).json({ error: 'Forbidden — read-only account' });
+  }
+  if (!VIEWER_GET_ALLOWLIST.includes(full)) {
+    return res.status(403).json({ error: 'Forbidden — read-only account' });
+  }
+  return next();
+}
+app.use('/api', viewerGate);
+
+// Viewer session check. Separate from requireAuth (which refuses viewer roles) — these are the
+// only routes a viewer session can authenticate against.
+async function requireViewer(req, res, next) {
+  try {
+    const s = await touchSession(req.headers['x-wms-token']);
+    if (!s) return res.status(401).json({ error: 'Unauthorized' });
+    if (s.role !== VIEWER_ROLE) return res.status(403).json({ error: 'Forbidden' });
+    req.wmsUser = s.username;
+    req.wmsRole = s.role;
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
@@ -91,9 +176,9 @@ app.post('/api/logout', async (req, res) => {
 
 app.get('/api/me', async (req, res) => {
   try {
-    const username = await touchSession(req.headers['x-wms-token']);
-    if (!username) return res.status(401).json({ error: 'Not logged in' });
-    res.json({ username });
+    const s = await touchSession(req.headers['x-wms-token']);
+    if (!s) return res.status(401).json({ error: 'Not logged in' });
+    res.json({ username: s.username });   // response shape unchanged for the office/tablet SPA
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -105,6 +190,112 @@ app.get('/api/health', async (req, res) => {
   } catch (e) {
     res.status(503).json({ ok: false, error: e.message });
   }
+});
+
+// ══ VIEWER (outside contractor, view-only) ════════════════════════════════════
+// Entirely separate from the admin login above, which is NOT touched. A viewer session can only
+// ever reach the three routes in this section (plus the public /api/health) — see viewerGate.
+
+// LIKE-pattern escape: a '%' or '_' in the prefix or the search box would otherwise act as a
+// wildcard and widen the window (e.g. VIEWER_SKU_PREFIX='_' would match every serial).
+function escapeLike(s) {
+  return String(s == null ? '' : s).replace(/[\\%_]/g, m => '\\' + m);
+}
+
+// The viewer's ONLY data query, built here so it can be unit-tested without a DB.
+// THE PREFIX FILTER RUNS IN SQL — never in the page. The page cannot widen it.
+//   · archived_at IS NULL  → archived/scrapped units are hidden (owner decision)
+//   · no status filter     → TZ units in EVERY status (STORED, STAGED_UNLISTED, SHIPPED)
+//   · UPPER(TRIM(serial))  → case-insensitive, so a hand-typed 'tz12345' still shows, and
+//                            LIKE 'TZ%' also catches a stray dashed 'TZ-12345'
+function buildViewerItemsQuery({ prefix, search, limit = 1000 } = {}) {
+  const values = [];
+  const where  = ['archived_at IS NULL'];
+
+  values.push(escapeLike(String(prefix).toUpperCase()) + '%');
+  where.push(`UPPER(TRIM(serial)) LIKE $${values.length} ESCAPE '\\'`);
+
+  const q = (search == null ? '' : String(search)).trim();
+  if (q) {
+    values.push('%' + escapeLike(q) + '%');
+    where.push(`serial ILIKE $${values.length} ESCAPE '\\'`);
+  }
+
+  values.push(Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 1000));
+  return {
+    text: `SELECT serial, location, status, updated_at
+             FROM items
+            WHERE ${where.join(' AND ')}
+            ORDER BY serial ASC
+            LIMIT $${values.length}`,
+    values,
+  };
+}
+
+// Railway sits behind a proxy, so the client IP is the first x-forwarded-for hop.
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  const ip  = (Array.isArray(xff) ? xff[0] : (xff || '')).split(',')[0].trim()
+           || req.socket?.remoteAddress || '';
+  return ip.slice(0, 64) || null;
+}
+
+// POST /api/viewer/login — separate endpoint; /api/login is untouched.
+// Disabled with 503 when WMS_VIEWER_PASSWORD is unset (no default password, ever).
+app.post('/api/viewer/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  const pass = viewerPassword();
+  if (!pass) {
+    return res.status(503).json({ error: 'Viewer login is not enabled.' });
+  }
+  if (viewerUsername() === WMS_USERNAME) {
+    console.error('[viewer] WMS_VIEWER_USERNAME collides with WMS_USERNAME — viewer login refused.');
+    return res.status(503).json({ error: 'Viewer login is misconfigured.' });
+  }
+  if (username !== viewerUsername() || password !== pass) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  // Needs migration 0009. Until it's applied, say so plainly instead of 500-ing.
+  const schema = await viewerSchema();
+  if (!schema.hasRole || !schema.hasLog) {
+    console.error('[viewer] migration 0009-viewer-role.sql not applied — viewer login unavailable.');
+    return res.status(503).json({ error: 'Viewer login is not available yet.' });
+  }
+  try {
+    // 'v_' prefix makes a viewer token recognisable to viewerGate without a DB round-trip.
+    const token = 'v_' + crypto.randomBytes(32).toString('hex');
+    await pool.query(
+      `INSERT INTO sessions (token, username, expires_at, role)
+            VALUES ($1, $2, NOW() + INTERVAL '12 hours', $3)`,
+      [token, viewerUsername(), VIEWER_ROLE]
+    );
+    // The owner-requested login log (time + IP). Never blocks the login.
+    pool.query('INSERT INTO viewer_logins (ip) VALUES ($1)', [clientIp(req)])
+        .catch(e => console.error('[viewer] login log failed:', e.message));
+    return res.json({ ok: true, token, username: viewerUsername(), role: VIEWER_ROLE });
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/viewer/logout — deletes only its own session row.
+app.post('/api/viewer/logout', async (req, res) => {
+  const token = req.headers['x-wms-token'];
+  try {
+    if (token) await pool.query('DELETE FROM sessions WHERE token = $1 AND role = $2', [token, VIEWER_ROLE]);
+  } catch (e) {}
+  res.json({ ok: true });
+});
+
+app.get('/api/viewer/me', requireViewer, (req, res) => {
+  res.json({ username: req.wmsUser, role: req.wmsRole, prefix: viewerPrefix() });
+});
+
+// GET /api/viewer/items?search= — the viewer's only data route.
+app.get('/api/viewer/items', requireViewer, async (req, res) => {
+  try {
+    const { text, values } = buildViewerItemsQuery({ prefix: viewerPrefix(), search: req.query.search });
+    const { rows } = await pool.query(text, values);
+    res.json({ items: rows, count: rows.length, prefix: viewerPrefix(), fetched: new Date().toISOString() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Locations ─────────────────────────────────────────────────────────────────
@@ -1354,12 +1545,51 @@ app.get('/api/stats', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Viewer page ───────────────────────────────────────────────────────────────
+// Served before the SPA catch-all so /viewer doesn't fall through to index.html. Like index.html
+// this shell is public (auth is a header token, not a cookie — see the diagnose doc's deviations);
+// it holds no data, and its data route needs a viewer session.
+app.get('/viewer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
+});
+
 // ── Catch-all → SPA ───────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`HawkerWMS running on port ${PORT}`);
-  if (!WMS_PASSWORD) console.warn('⚠️  WMS_PASSWORD not set — login will be blocked. Add it in Railway Variables.');
-});
+// Started only when run directly (`node server.js`), so `require('./server')` in the tests can
+// exercise the app without opening a port, connecting to Postgres, or leaving a timer running.
+if (require.main === module) {
+  pool.query('SELECT 1').then(() => {
+    console.log('✓ PostgreSQL connected');
+  }).catch(err => {
+    console.error('✗ PostgreSQL connection failed:', err.message);
+  });
+
+  // Reclaim expired session rows hourly (expired tokens are already rejected by touchSession's
+  // `expires_at > NOW()` guard; this sweep just frees rows). DB-backed (was an in-memory Map sweep).
+  setInterval(() => {
+    pool.query('DELETE FROM sessions WHERE expires_at <= NOW()').catch(e => console.error('[sessions] cleanup failed:', e.message));
+  }, 60 * 60 * 1000);
+
+  app.listen(PORT, () => {
+    console.log(`HawkerWMS running on port ${PORT}`);
+    if (!WMS_PASSWORD) console.warn('⚠️  WMS_PASSWORD not set — login will be blocked. Add it in Railway Variables.');
+    if (!viewerPassword()) console.log('ℹ️  WMS_VIEWER_PASSWORD not set — viewer login is disabled.');
+  });
+}
+
+module.exports = {
+  app,
+  viewerGate,
+  requireAuth,
+  requireViewer,
+  touchSession,
+  buildViewerItemsQuery,
+  escapeLike,
+  VIEWER_GET_ALLOWLIST,
+  VIEWER_POST_ALLOWLIST,
+  // Test seam: swap in a fake pool so the suite needs no database and no new dependency.
+  __setPoolForTests(p) { pool = p; _schemaCache = { hasRole: true, hasLog: true, at: Date.now(), ok: true }; },
+};

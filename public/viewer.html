@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HawkerWMS — Unit Lookup</title>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Standalone read-only page. Same theme tokens as index.html (Rule 21) but NO shared code:
+   it loads nothing from the office SPA and has no edit controls of any kind. */
+:root{
+  --bg:#F2EFE9; --bg2:#FFFFFF; --bg3:#EAE6DF; --card:#FFFFFF; --border:#E0DBD2; --bh:#C8C2B6;
+  --text:#1A2332; --text2:#4A5A6B; --muted:#8F9EB0;
+  --brand:#1D4ED8; --brand-d:rgba(29,78,216,.08); --brand-m:rgba(29,78,216,.15);
+  --success:#15803D; --success-d:rgba(21,128,61,.1);
+  --warn:#B45309; --warn-d:rgba(180,83,9,.1);
+  --err:#B91C1C; --err-d:rgba(185,28,28,.1);
+  --shadow:0 1px 4px rgba(26,35,50,.08),0 4px 16px rgba(26,35,50,.06);
+  --shadow-sm:0 1px 3px rgba(26,35,50,.07);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.mono{font-family:'Fira Code',monospace}
+
+/* ── login ── */
+#login{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}
+#login .box{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:36px 28px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(26,35,50,.12)}
+.mark{width:56px;height:56px;border-radius:14px;background:var(--brand);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;box-shadow:0 4px 16px rgba(29,78,216,.3)}
+label{font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px}
+input{width:100%;background:var(--bg2);border:1.5px solid var(--border);border-radius:10px;padding:11px 14px;font-family:'Plus Jakarta Sans',sans-serif;font-size:15px;color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
+input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-d)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;border:none;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s;letter-spacing:-.01em}
+.btn:hover{filter:brightness(.95)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-p{background:var(--brand);color:#fff;box-shadow:0 1px 4px rgba(29,78,216,.25)}
+.btn-s{background:var(--bg2);color:var(--text);border:1.5px solid var(--border);box-shadow:var(--shadow-sm)}
+.err{background:var(--err-d);color:var(--err);border-radius:8px;padding:10px 14px;font-size:13px;text-align:center}
+
+/* ── app ── */
+header{position:sticky;top:0;background:var(--bg2);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--brand);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 8px rgba(29,78,216,.3)}
+.htitle{font-size:16px;font-weight:700;letter-spacing:-.02em}
+.hsub{font-size:12px;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:100px;padding:4px 11px;font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em}
+main{max-width:1000px;margin:0 auto;padding:22px 20px 60px}
+.sb{display:flex;align-items:center;gap:10px;background:var(--card);border:1.5px solid var(--border);border-radius:11px;padding:10px 14px;box-shadow:var(--shadow-sm);transition:border-color .15s,box-shadow .15s}
+.sb:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-d)}
+.sb svg{width:17px;height:17px;color:var(--muted);flex-shrink:0}
+.sb input{border:none;background:none;padding:0;box-shadow:none;font-size:15px}
+.sb input:focus{box-shadow:none}
+.meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:16px 0 10px;font-size:13px;color:var(--text2)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-sm);overflow:hidden}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-bottom:1.5px solid var(--border);background:var(--bg);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--border);color:var(--text2);font-size:14px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:600;white-space:nowrap}
+.bg-s{background:var(--success-d);color:var(--success)}
+.bg-w{background:var(--warn-d);color:var(--warn)}
+.bg-b{background:var(--brand-d);color:var(--brand)}
+.bg-m{background:var(--bg3);color:var(--text2)}
+.empty{padding:48px 20px;text-align:center;color:var(--muted);font-size:14px}
+.foot{margin-top:18px;font-size:12px;color:var(--muted);text-align:center;line-height:1.7}
+@media(max-width:560px){
+  main{padding:16px 13px 50px}
+  header{padding:10px 13px}
+  .hsub{display:none}
+  th,td{padding:10px 11px}
+}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ─────────────────────────────────────────────────────────────── -->
+<div id="login">
+  <div class="box">
+    <div style="text-align:center;margin-bottom:28px">
+      <div class="mark">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M12 2C11 2 10 2.5 9.5 3.5L8 6H5L3 8L7 7.5L6 10L9 9C9.5 10.5 10.5 11.5 12 12C13.5 11.5 14.5 10.5 15 9L18 10L17 7.5L21 8L19 6H16L14.5 3.5C14 2.5 13 2 12 2Z"/><path d="M9.5 13C7.5 14 5 15 3 18C5.5 16.5 8 16.5 10 17.5C10.5 15.5 10.5 14 9.5 13Z"/><path d="M14.5 13C16.5 14 19 15 21 18C18.5 16.5 16 16.5 14 17.5C13.5 15.5 13.5 14 14.5 13Z"/><path d="M10.5 17.5C11 19.5 11.5 21 12 22C12.5 21 13 19.5 13.5 17.5C13 17.8 12.5 18 12 18C11.5 18 11 17.8 10.5 17.5Z"/><circle cx="12" cy="8" r="1.5"/></svg>
+      </div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.03em">Unit Lookup</div>
+      <div style="font-size:14px;color:var(--muted);margin-top:4px">View-only access to your units</div>
+    </div>
+    <div style="margin-bottom:16px">
+      <label for="u">Username</label>
+      <input id="u" type="text" placeholder="viewer" autocomplete="username" autocapitalize="none" spellcheck="false">
+    </div>
+    <div style="margin-bottom:22px">
+      <label for="p">Password</label>
+      <input id="p" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div id="lerr" class="err" style="display:none;margin-bottom:16px"></div>
+    <button id="lbtn" class="btn btn-p" style="width:100%;padding:12px;font-size:15px;font-weight:600">Sign In</button>
+  </div>
+</div>
+
+<!-- ── APP (read-only) ───────────────────────────────────────────────────── -->
+<div id="app" style="display:none">
+  <header>
+    <div style="display:flex;align-items:center;gap:11px;min-width:0">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M12 2C11 2 10 2.5 9.5 3.5L8 6H5L3 8L7 7.5L6 10L9 9C9.5 10.5 10.5 11.5 12 12C13.5 11.5 14.5 10.5 15 9L18 10L17 7.5L21 8L19 6H16L14.5 3.5C14 2.5 13 2 12 2Z"/><path d="M9.5 13C7.5 14 5 15 3 18C5.5 16.5 8 16.5 10 17.5C10.5 15.5 10.5 14 9.5 13Z"/><path d="M14.5 13C16.5 14 19 15 21 18C18.5 16.5 16 16.5 14 17.5C13.5 15.5 13.5 14 14.5 13Z"/><path d="M10.5 17.5C11 19.5 11.5 21 12 22C12.5 21 13 19.5 13.5 17.5C13 17.8 12.5 18 12 18C11.5 18 11 17.8 10.5 17.5Z"/><circle cx="12" cy="8" r="1.5"/></svg>
+      </div>
+      <div style="min-width:0">
+        <div class="htitle">Unit Lookup</div>
+        <div class="hsub">HawkerWMS · view only</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="pill" id="pill-prefix">—</span>
+      <button id="out" class="btn btn-s">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="sb">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      <input id="q" type="search" placeholder="Search serial…" autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+
+    <div class="meta">
+      <div id="count">Loading…</div>
+      <div id="stamp"></div>
+    </div>
+
+    <div class="card">
+      <div class="tw">
+        <table>
+          <thead>
+            <tr><th>Serial</th><th>Location</th><th>Status</th><th>Last updated</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="empty" style="display:none"></div>
+    </div>
+
+    <div class="foot">
+      This is a read-only view. Locations and statuses are maintained by the warehouse team.
+    </div>
+  </main>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  Viewer page. READ-ONLY: it calls exactly two data endpoints, both GET
+//  (/api/viewer/me, /api/viewer/items), plus login/logout for its own session.
+//  The TZ prefix filter is applied by the SERVER in SQL — this page never
+//  receives a non-TZ serial and cannot ask for one.
+//  Its token lives under its OWN localStorage key so it can never collide
+//  with the office/tablet session in `wms_token`.
+// ═══════════════════════════════════════════════════════════════════════════
+var TOKEN_KEY = 'wms_viewer_token';
+var TOKEN = '';
+try { TOKEN = localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { TOKEN = ''; }
+
+var $ = function (id) { return document.getElementById(id); };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+function saveToken(t) {
+  TOKEN = t || '';
+  try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+}
+
+function showLogin(msg) {
+  $('app').style.display = 'none';
+  $('login').style.display = 'flex';
+  if (msg) { $('lerr').textContent = msg; $('lerr').style.display = 'block'; }
+  setTimeout(function () { $('u').focus(); }, 60);
+}
+function showApp() {
+  $('login').style.display = 'none';
+  $('app').style.display = 'block';
+}
+
+async function get(path) {
+  var r = await fetch(path, { headers: { 'x-wms-token': TOKEN } });
+  if (r.status === 401 || r.status === 403) {
+    saveToken('');
+    showLogin('Your session has ended. Please sign in again.');
+    throw new Error('unauthorized');
+  }
+  var d = await r.json().catch(function () { return {}; });
+  if (!r.ok) throw new Error(d.error || ('Request failed (' + r.status + ')'));
+  return d;
+}
+
+// ── login / logout ────────────────────────────────────────────────────────
+async function doLogin() {
+  var btn = $('lbtn'), err = $('lerr');
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
+  try {
+    // No token header on login — a stale token must never affect a fresh sign-in.
+    var r = await fetch('/api/viewer/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: $('u').value.trim(), password: $('p').value }),
+    });
+    var d = await r.json().catch(function () { return {}; });
+    if (!r.ok) throw new Error(d.error || 'Sign-in failed');
+    saveToken(d.token);
+    $('p').value = '';
+    showApp();
+    await start();
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Sign In';
+}
+
+async function doLogout() {
+  try { await fetch('/api/viewer/logout', { method: 'POST', headers: { 'x-wms-token': TOKEN } }); } catch (e) {}
+  saveToken('');
+  $('q').value = '';
+  $('rows').innerHTML = '';
+  showLogin();
+}
+
+// ── list ──────────────────────────────────────────────────────────────────
+var STATUS_CLASS = { STORED: 'bg-s', STAGED_UNLISTED: 'bg-w', SHIPPED: 'bg-b' };
+
+function when(ts) {
+  if (!ts) return '—';
+  var d = new Date(ts);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function render(d) {
+  var items = d.items || [];
+  $('rows').innerHTML = items.map(function (it) {
+    return '<tr>'
+      + '<td class="mono" style="color:var(--text);font-weight:500">' + esc(it.serial) + '</td>'
+      + '<td class="mono">' + (it.location ? esc(it.location) : '<span style="color:var(--muted)">—</span>') + '</td>'
+      + '<td><span class="badge ' + (STATUS_CLASS[it.status] || 'bg-m') + '">'
+      +   esc(String(it.status || '').replace(/_/g, ' ')) + '</span></td>'
+      + '<td>' + esc(when(it.updated_at)) + '</td>'
+      + '</tr>';
+  }).join('');
+
+  var searching = !!$('q').value.trim();
+  $('count').textContent = items.length === 1 ? '1 unit' : items.length + ' units';
+  $('stamp').textContent = 'Updated ' + when(d.fetched);
+  $('empty').style.display = items.length ? 'none' : 'block';
+  $('empty').textContent = searching
+    ? 'No units match that search.'
+    : 'No units are on file yet. They appear here once the warehouse scans them in.';
+}
+
+var timer = null;
+async function load() {
+  try {
+    var s = $('q').value.trim();
+    render(await get('/api/viewer/items' + (s ? '?search=' + encodeURIComponent(s) : '')));
+  } catch (e) {
+    if (e.message === 'unauthorized') return;
+    $('count').textContent = e.message;
+  }
+}
+
+async function start() {
+  try {
+    var me = await get('/api/viewer/me');
+    $('pill-prefix').textContent = (me.prefix || '') + ' units';
+  } catch (e) {
+    if (e.message === 'unauthorized') return;
+  }
+  await load();
+}
+
+// ── wiring ────────────────────────────────────────────────────────────────
+$('lbtn').addEventListener('click', doLogin);
+$('u').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+$('p').addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+$('out').addEventListener('click', doLogout);
+$('q').addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 220); });
+$('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') { clearTimeout(timer); load(); } });
+
+if (TOKEN) { showApp(); start(); } else { showLogin(); }
+</script>
+</body>
+</html>
